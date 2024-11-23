@@ -38,26 +38,6 @@ class Table:
         self.data_stream = open(self.data_file_path, "r+b")
         self.metadata = Metadata.load_metadata(self.metadata_file_path)
 
-    # @property
-    # def data_file_path(self):
-    #     return self.__data_file_path
-    #
-    # @data_file_path.setter
-    # def data_file_path(self, value):
-    #     if not os.path.exists(value):
-    #         raise TableDoesNotExistError(f"Data file of '{self.table_name}' not found!")
-    #     self.__data_file_path = value
-    #
-    # @property
-    # def metadata_file_path(self):
-    #     return self.__metadata_file_path
-    #
-    # @metadata_file_path.setter
-    # def metadata_file_path(self, value):
-    #     if not os.path.exists(value):
-    #         raise TableDoesNotExistError(f"Metadata file of '{self.table_name}' not found!")
-    #     self.__metadata_file_path = value
-
     @staticmethod
     def create_table(directory: str, table_name: str, columns: List[Column]):
         metadata_file_path = os.path.join(directory, f"{table_name}.meta")

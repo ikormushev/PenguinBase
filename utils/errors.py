@@ -7,6 +7,10 @@ class InvalidCommandError(BaseDatabaseError):
     ...
 
 
+class TableAlreadyExistsError(BaseDatabaseError):
+    ...
+
+
 class TableDoesNotExistError(BaseDatabaseError):
     ...
 

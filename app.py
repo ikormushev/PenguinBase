@@ -25,16 +25,7 @@ def create_table(table_name, columns):
     if not os.path.exists(DB_DIRECTORY):
         os.makedirs(DB_DIRECTORY)
 
-    metadata_file = os.path.join(DB_DIRECTORY, f"{table_name}.meta")
-    data_file = os.path.join(DB_DIRECTORY, f"{table_name}.data")
-    if os.path.exists(metadata_file) or os.path.exists(data_file):
-        print(f"Error: Table '{table_name}' already exists.")
-        return
-
-    metadata = Metadata(table_name=table_name, columns=columns, metadata_file_path=metadata_file)
-    metadata.save_metadata()
-
-    open(data_file, "w").close()
+    Table.create_table(DB_DIRECTORY, table_name, columns)
 
     print(f"Table '{table_name}' created successfully!")
 
@@ -61,14 +52,12 @@ def drop_table(table_name):
 
 
 def table_info(table_name: str):
-    metadata = load_metadata(table_name)
-    data_path = os.path.join(DB_DIRECTORY, f"{table_name}.data")
-    metadata.display_table_metadata(data_path)
+    new_table = Table(DB_DIRECTORY, table_name)
+    new_table.metadata.display_table_metadata(new_table.data_file_path)
 
 
 def get_table_rows(table_name, rows):
-    new_table = Table(data_file_path=os.path.join(DB_DIRECTORY, f"{table_name}.data"),
-                      metadata_file_path=os.path.join(DB_DIRECTORY, f"{table_name}.meta"))
+    new_table = Table(DB_DIRECTORY, table_name)
 
     metadata_columns = new_table.metadata.columns
     result = ""
@@ -78,24 +67,27 @@ def get_table_rows(table_name, rows):
     print(f"{result}")
     print("-" * len(result))
 
-    for row in new_table.get_rows(rows):
+    for curr_row in new_table.get_rows(rows):
         row_result = ""
-        for col in metadata.columns:
-            value = row[col.column_name]
+        for col in metadata_columns:
+            value = curr_row[col.column_name]
             row_result += f"  {value}  |"
         print(row_result)
 
 
 def insert_into_table(table_name, row_data):
-    new_table = Table(data_file_path=os.path.join(DB_DIRECTORY, f"{table_name}.data"),
-                      metadata_file_path=os.path.join(DB_DIRECTORY, f"{table_name}.meta"))
+    new_table = Table(DB_DIRECTORY, table_name)
     new_table.insert(row_data)
 
 
 def delete_table_rows(table_name, rows):
-    new_table = Table(data_file_path=os.path.join(DB_DIRECTORY, f"{table_name}.data"),
-                      metadata_file_path=os.path.join(DB_DIRECTORY, f"{table_name}.meta"))
+    new_table = Table(DB_DIRECTORY, table_name)
     new_table.delete_rows(rows)
+
+
+def defragment_table(table_name):
+    new_table = Table(DB_DIRECTORY, table_name)
+    new_table.defragment()
 
 
 table_columns = get_table_columns()
@@ -121,32 +113,40 @@ while True:
         drop_table(name)
     elif "GET ROW" in command:
         given_rows = input("Rows Numbers or 'ALL': ")
+        new_rows = DynamicQueue()
+
         if given_rows == "ALL":
             metadata = load_metadata(name)
-            new_rows = DynamicQueue()
             for i in range(1, metadata.rows_count + 1):
                 new_rows.enqueue(i)
-            get_table_rows(name, new_rows)
         else:
             given_rows = given_rows.split(",")
-            new_rows = DynamicQueue()
-
-            for r in given_rows:
-                new_rows.enqueue(int(r))
-
-            get_table_rows(name, new_rows)
-    elif "DELETE FROM" in command:
-        from_where = input("'ROW' or 'WHERE': ")
-        if from_where == "ROW":
-            given_rows = input("Row Numbers: ")
-            given_rows = given_rows.split(",")
-            new_rows = DynamicQueue()
-
             for r in given_rows:
                 if r != "":
                     new_rows.enqueue(int(r))
+
+        get_table_rows(name, new_rows)
+    elif "DELETE FROM" in command:
+        from_where = input("'ROW' or 'WHERE': ")
+
+        if from_where == "ROW":
+            new_rows = DynamicQueue()
+            given_rows = input("Row Numbers or 'HALF': ")
+
+            if given_rows == "HALF":
+                metadata = load_metadata(name)
+                for i in range(1, metadata.rows_count // 2):
+                    new_rows.enqueue(i)
+            else:
+                given_rows = given_rows.split(",")
+                for r in given_rows:
+                    if r != "":
+                        new_rows.enqueue(int(r))
+
             delete_table_rows(name, new_rows)
         elif from_where == "WHERE":
             ...
+    elif "DEFRAGMENT" in command:
+        defragment_table(name)
     else:
         print("Enter a valid command.")

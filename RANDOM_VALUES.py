@@ -18,7 +18,7 @@ def get_table_columns():
 def get_table_insert_rows():
     table_insert_rows = []
 
-    for i in range(1, 1000):
+    for i in range(1, 1001):
         row = HashTable(4)
         random_name_length = random.randint(1, 20)
         random_email_length = random.randint(1, 5)

@@ -2,12 +2,14 @@ import os
 import struct
 from typing import List
 
+from data_structures.btree import BTree
 from data_structures.dynamic_queue import DynamicQueue
 from data_structures.hash_table import HashTable
 from db_components.column import Column
 from db_components.freeslot import FreeSlot
+from db_components.index import TableIndex
 from db_components.metadata import Metadata
-from utils.errors import OutOfRangeError, MandatoryColumnError, TableAlreadyExistsError, TableDoesNotExistError
+from utils.errors import ColumnError, TableError
 from utils.validators import is_valid_number, is_valid_date
 
 
@@ -29,11 +31,11 @@ class Table:
 
         self.data_file_path = os.path.join(self.directory, f"{self.table_name}.data")
         if not os.path.exists(self.data_file_path):
-            raise TableDoesNotExistError(f"Data file of '{self.table_name}' not found!")
+            raise TableError(f"Data file of '{self.table_name}' not found!")
 
         self.metadata_file_path = os.path.join(self.directory, f"{self.table_name}.meta")
         if not os.path.exists(self.metadata_file_path):
-            raise TableDoesNotExistError(f"Metadata file of '{self.table_name}' not found!")
+            raise TableError(f"Metadata file of '{self.table_name}' not found!")
 
         self.data_stream = open(self.data_file_path, "r+b")
         self.metadata = Metadata.load_metadata(self.metadata_file_path)
@@ -44,7 +46,7 @@ class Table:
         data_file_path = os.path.join(directory, f"{table_name}.data")
 
         if os.path.exists(metadata_file_path) or os.path.exists(data_file_path):
-            raise TableAlreadyExistsError(f"Table '{table_name}' already exists!")
+            raise TableError(f"Table '{table_name}' already exists!")
 
         metadata = Metadata(table_name=table_name,
                             columns=columns,
@@ -141,7 +143,7 @@ class Table:
                         or (col.column_type == "string" and isinstance(value, str))):
                     is_value_valid = True
                 else:
-                    raise ValueError(f"Value for column {col.column_name} "
+                    raise ValueError(f"Value for column '{col.column_name}' "
                                      f"has to be of type '{col.column_type}'!")
 
                 # TODO - check for PK uniquness
@@ -155,7 +157,7 @@ class Table:
                 if col.default_value:
                     row[col.column_name] = col.default_value
                 else:
-                    raise MandatoryColumnError(f"Column '{col.column_name}' requires a value!")
+                    raise ColumnError(f"Column '{col.column_name}' requires a value!")
 
         return row
 
@@ -198,10 +200,9 @@ class Table:
         node_bytes = self.serialize_table_node(new_node)
         self.data_stream.seek(position)
         self.data_stream.write(node_bytes)
-        self.data_stream.close()
 
         self.metadata.rows_count += 1
-        self.metadata.save_metadata()
+        self.metadata.save_metadata()   # TODO - fix when automatic save of the Table is implemented
 
     def get_rows(self, row_numbers: DynamicQueue):
         # TODO - row_numbers - sorted?
@@ -222,9 +223,9 @@ class Table:
             current_row += 1
 
         if row_numbers.length > 0:
-            raise OutOfRangeError("The table has no more rows.")
+            raise TableError(f"Table '{self.table_name}' has no more rows!")
 
-    def delete(self, node: TableNode):
+    def _delete(self, node: TableNode):
         if node.previous_position != -1:
             prev_node = self.deserialize_table_node(node.previous_position)
             prev_node.next_position = node.next_position
@@ -259,17 +260,17 @@ class Table:
             node = self.deserialize_table_node(current_offset)
 
             if current_row == target_row:
-                self.delete(node)
+                self._delete(node)
                 row_numbers.dequeue()
 
             current_offset = node.next_position
             current_row += 1
 
-        self.metadata.save_metadata()
-        self.data_stream.close()
+        self._recreate_index_tree()  # TODO - Recreate index tree or delete just the removed part?
+        self.metadata.save_metadata()   # TODO - fix when automatic save of the Table is implemented
 
         if row_numbers.length > 0:
-            raise OutOfRangeError("The table ran out of rows!")
+            raise TableError(f"Table '{self.table_name}' ran out of rows!")
 
         # if self.metadata.rows_count > 0:
         #     fragmentation_percentage = (len(self.metadata.free_slots)
@@ -317,7 +318,6 @@ class Table:
             row_count += 1
 
         temp_stream.close()
-        self.data_stream.close()
 
         old_path = self.data_file_path
         os.remove(self.data_file_path)
@@ -329,4 +329,72 @@ class Table:
         self.metadata.table_end = current_offset
         self.metadata.free_slots = []
 
-        self.metadata.save_metadata()
+        self._recreate_index_tree()
+
+        self.metadata.save_metadata()   # TODO - fix when automatic save of the Table is implemented
+
+    def drop_table(self):
+        if not os.path.exists(self.data_file_path) or not os.path.exists(self.metadata_file_path):
+            raise FileNotFoundError("Table files are missing!")
+
+        self.data_stream.close()
+        os.remove(self.data_file_path)
+        os.remove(self.metadata_file_path)
+
+    def find_column(self, column_name):
+        for col in self.metadata.columns:
+            if col.column_name == column_name:
+                return col
+
+    def _recreate_index_tree(self):
+        for _, index in self.metadata.indexes.items():
+            btree = self._create_index_tree(index.column_name)
+            index.index_tree = btree
+            index.save_index()   # TODO - fix when automatic save of the Table is implemented
+
+    def _create_index_tree(self, column_name):
+        btree = BTree(3)
+
+        current_offset = self.metadata.first_offset
+        while current_offset != -1:
+            node = self.deserialize_table_node(current_offset)
+            current_offset = node.next_position
+            btree.insert(node.row_data[column_name], node.position)
+
+        return btree
+
+    def create_new_index(self, index_name: str, column_name: str):
+        column = self.find_column(column_name)
+        if column is None:
+            raise ColumnError(f"Column '{column_name}' does not exist!")
+
+        if self.metadata.indexes.search(column_name) is not None:
+            raise ColumnError(f"Column '{column_name}' already has an index!")
+
+        btree = self._create_index_tree(column_name)
+
+        index_path = os.path.join(self.directory, f"{index_name}.index")
+        new_index = TableIndex(index_name=index_name,
+                               column=column,
+                               index_path=index_path, index_tree=btree)
+        new_index.save_index()   # TODO - fix when automatic save of the Table is implemented
+
+        self.metadata.indexes.insert(column_name, new_index)
+        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
+
+    def drop_index(self, index_name: str):
+        for col, index in self.metadata.indexes.items():
+            if index.name == index_name:
+                index.delete_index()
+                self.metadata.indexes._delete(col)
+                return
+
+        raise TableError(f"Index '{index_name}' does not exist!")
+
+    def check_index(self, index_name: str):
+        for _, index in self.metadata.indexes.items():
+            if index.index_name == index_name:
+                index.print_index()
+                return
+
+        raise TableError(f"Index '{index_name}' does not exist!")

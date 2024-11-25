@@ -1,10 +1,14 @@
 import os.path
+from typing import List
 
 from RANDOM_VALUES import get_table_columns, get_table_insert_rows
+from data_structures.hash_table import HashTable
+from db_components import table
+from db_components.column import Column
 from db_components.table import Table
 from db_components.metadata import Metadata
 
-from utils.errors import TableDoesNotExistError
+from utils.errors import TableError
 from data_structures.dynamic_queue import DynamicQueue
 
 DB_DIRECTORY = "pbdb_files"
@@ -14,14 +18,14 @@ def load_metadata(table_name: str):
     file_path = os.path.join(DB_DIRECTORY, f"{name}.meta")
 
     if not os.path.exists(file_path):
-        raise TableDoesNotExistError(f"Meta data of table {table_name} not found!")
+        raise TableError(f"Meta data of table {table_name} not found!")
 
     table_metadata = Metadata.load_metadata(file_path)
     return table_metadata
 
 
 # TODO - create index for the PK column
-def create_table(table_name, columns):
+def create_table(table_name: str, columns: List[Column]):
     if not os.path.exists(DB_DIRECTORY):
         os.makedirs(DB_DIRECTORY)
 
@@ -30,36 +34,17 @@ def create_table(table_name, columns):
     print(f"Table '{table_name}' created successfully!")
 
 
-def drop_table(table_name):
-    meta_file = os.path.join(DB_DIRECTORY, f"{table_name}.meta")
-    data_file = os.path.join(DB_DIRECTORY, f"{table_name}.data")
-
-    try:
-        os.remove(meta_file)
-        print(f"Deleted: {meta_file}")
-    except FileNotFoundError:
-        print(f"Warning: Metadata file '{meta_file}' not found.")
-        return
-
-    try:
-        os.remove(data_file)
-        print(f"Deleted: {data_file}")
-    except FileNotFoundError:
-        print(f"Warning: Data file '{data_file}' not found.")
-        return
-
-    print(f"Table '{table_name}' dropped successfully!")
+def drop_table(table: Table):
+    table.drop_table()
 
 
-def table_info(table_name: str):
-    new_table = Table(DB_DIRECTORY, table_name)
-    new_table.metadata.display_table_metadata(new_table.data_file_path)
+def table_info(table: Table):
+    table.metadata.display_table_metadata(table.data_file_path)
 
 
-def get_table_rows(table_name, rows):
-    new_table = Table(DB_DIRECTORY, table_name)
+def get_table_rows(table: Table, rows_nums: DynamicQueue):
 
-    metadata_columns = new_table.metadata.columns
+    metadata_columns = table.metadata.columns
     result = ""
 
     for col in metadata_columns:
@@ -67,7 +52,7 @@ def get_table_rows(table_name, rows):
     print(f"{result}")
     print("-" * len(result))
 
-    for curr_row in new_table.get_rows(rows):
+    for curr_row in table.get_rows(rows_nums):
         row_result = ""
         for col in metadata_columns:
             value = curr_row[col.column_name]
@@ -75,28 +60,47 @@ def get_table_rows(table_name, rows):
         print(row_result)
 
 
-def insert_into_table(table_name, row_data):
-    new_table = Table(DB_DIRECTORY, table_name)
-    new_table.insert(row_data)
+def insert_into_table(table: Table, row_data: HashTable):
+    table.insert(row_data)
 
 
-def delete_table_rows(table_name, rows):
-    new_table = Table(DB_DIRECTORY, table_name)
-    new_table.delete_rows(rows)
+def delete_table_rows(table: Table, rows_nums: DynamicQueue):
+    table.delete_rows(rows_nums)
 
 
-def defragment_table(table_name):
-    new_table = Table(DB_DIRECTORY, table_name)
-    new_table.defragment()
+def defragment_table(table: Table):
+    table.defragment()
+
+
+def create_index(table: Table, index_name: str, column_name: str):
+    table.create_new_index(index_name, column_name)
+
+
+def drop_index(table: Table, index_name: str):
+
+    table.drop_index(index_name)
+
+
+def check_index(table: Table, index_name: str):
+    table.check_index(index_name)
 
 
 table_columns = get_table_columns()
 
 table_insert_rows = get_table_insert_rows()
 
+tables = HashTable()
+valid_commands = ["CREATE TABLE", "EXIT", "INSERT INTO",
+                  "TABLEINFO", "DROP TABLE", "GET ROW",
+                  "DELETE FROM", "DEFRAGMENT",
+                  "CREATE INDEX", "DROP INDEX", "CHECK INDEX"]
 
 while True:
     command = input("Command name: ")
+    if command not in valid_commands:
+        print("Enter a valid command.")
+        continue
+
     if command == "EXIT":
         break
 
@@ -104,13 +108,19 @@ while True:
 
     if "CREATE TABLE" in command:
         create_table(name, table_columns)
-    elif "INSERT INTO" in command:
+        continue
+
+    if tables.search(name) is None:
+        tables[name] = Table(DB_DIRECTORY, name)
+    table = tables[name]
+
+    if "INSERT INTO" in command:
         for row in table_insert_rows:
-            insert_into_table(name, row)
+            insert_into_table(table, row)
     elif "TABLEINFO" in command:
-        table_info(name)
+        table_info(table)
     elif "DROP TABLE" in command:
-        drop_table(name)
+        drop_table(table)
     elif "GET ROW" in command:
         given_rows = input("Rows Numbers or 'ALL': ")
         new_rows = DynamicQueue()
@@ -125,7 +135,7 @@ while True:
                 if r != "":
                     new_rows.enqueue(int(r))
 
-        get_table_rows(name, new_rows)
+        get_table_rows(table, new_rows)
     elif "DELETE FROM" in command:
         from_where = input("'ROW' or 'WHERE': ")
 
@@ -143,10 +153,17 @@ while True:
                     if r != "":
                         new_rows.enqueue(int(r))
 
-            delete_table_rows(name, new_rows)
+            delete_table_rows(table, new_rows)
         elif from_where == "WHERE":
             ...
     elif "DEFRAGMENT" in command:
-        defragment_table(name)
-    else:
-        print("Enter a valid command.")
+        defragment_table(table)
+    elif "INDEX" in command:
+        index_name = input("Index Name: ")
+        if "CREATE" in command:
+            column_name = input("Column Name: ")
+            create_index(table, index_name, column_name)
+        elif "DROP" in command:
+            drop_index(table, index_name)
+        elif "CHECK" in command:
+            check_index(table, index_name)

@@ -44,7 +44,8 @@ class HashTable:
                 return current.value
             current = current.next
 
-        raise KeyError(f"Key '{key}' not found in HashTable.")
+        return None
+        # raise KeyError(f"Key '{key}' not found in HashTable.")
 
     def __delitem__(self, key):
         index = self._hash(key)

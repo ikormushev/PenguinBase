@@ -3,7 +3,6 @@ from typing import List
 
 from RANDOM_VALUES import get_table_columns, get_table_insert_rows
 from data_structures.hash_table import HashTable
-from db_components import table
 from db_components.column import Column
 from db_components.table import Table
 from db_components.metadata import Metadata

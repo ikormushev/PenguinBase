@@ -320,8 +320,10 @@ class Table:
         temp_stream.close()
 
         old_path = self.data_file_path
+        self.data_stream.close()
         os.remove(self.data_file_path)
         os.rename(temp_file_path, old_path)
+        self.data_stream = open(self.data_file_path, "r+b")
 
         self.metadata.first_offset = new_first_offset
         self.metadata.last_offset = new_last_offset
@@ -348,7 +350,7 @@ class Table:
 
     def _recreate_index_tree(self):
         for _, index in self.metadata.indexes.items():
-            btree = self._create_index_tree(index.column_name)
+            btree = self._create_index_tree(index.column.column_name)
             index.index_tree = btree
             index.save_index()   # TODO - fix when automatic save of the Table is implemented
 
@@ -384,9 +386,9 @@ class Table:
 
     def drop_index(self, index_name: str):
         for col, index in self.metadata.indexes.items():
-            if index.name == index_name:
+            if index.index_name == index_name:
                 index.delete_index()
-                self.metadata.indexes._delete(col)
+                self.metadata.indexes.delete(col)
                 return
 
         raise TableError(f"Index '{index_name}' does not exist!")

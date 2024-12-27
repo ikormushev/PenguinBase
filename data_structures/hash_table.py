@@ -9,9 +9,13 @@ class HashNode:
 
 
 class HashTable:
-    def __init__(self, size=10):
+    def __init__(self, pairs: list = None, size=10):
         self.table_items: List[HashNode | None] = [None] * size
         self.size = size
+
+        if pairs is not None:
+            for key, value in pairs:
+                self.insert(key, value)
 
     def _hash(self, key):
         hash_value = 0

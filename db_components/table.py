@@ -2,7 +2,6 @@ import os
 import struct
 from typing import List
 
-from data_structures.btree import BTree
 from data_structures.dynamic_queue import DynamicQueue
 from data_structures.hash_table import HashTable
 from db_components.column import Column
@@ -103,7 +102,7 @@ class Table:
     def deserialize_table_row(self, row_data: bytes) -> HashTable:
         metadata_columns = self.metadata.columns
         offset = 0
-        row = HashTable(len(metadata_columns))
+        row = HashTable(size=len(metadata_columns))
 
         for col in metadata_columns:
             if col.column_type == "number":
@@ -138,20 +137,13 @@ class Table:
             try:
                 value = row[col.column_name]
 
-                if ((col.column_type == "number" and is_valid_number(value))
-                        or (col.column_type == "date" and is_valid_date(value))
-                        or (col.column_type == "string" and isinstance(value, str))):
-                    is_value_valid = True
-                else:
-                    raise ValueError(f"Value for column '{col.column_name}' "
-                                     f"has to be of type '{col.column_type}'!")
+                col.validate_column_value(value)
 
                 # TODO - check for PK uniquness
                 # if col.is_primary_key:
                 #     check_primary_key(col, value)
 
-                if is_value_valid:
-                    row[col.column_name] = value
+                row[col.column_name] = value
 
             except KeyError:
                 if col.default_value:
@@ -201,8 +193,9 @@ class Table:
         self.data_stream.seek(position)
         self.data_stream.write(node_bytes)
 
+        self._add_row_to_indexes(new_node)
         self.metadata.rows_count += 1
-        self.metadata.save_metadata()   # TODO - fix when automatic save of the Table is implemented
+        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
 
     def get_rows(self, row_numbers: DynamicQueue):
         # TODO - row_numbers - sorted?
@@ -266,8 +259,7 @@ class Table:
             current_offset = node.next_position
             current_row += 1
 
-        self._recreate_index_tree()  # TODO - Recreate index tree or delete just the removed part?
-        self.metadata.save_metadata()   # TODO - fix when automatic save of the Table is implemented
+        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
 
         if row_numbers.length > 0:
             raise TableError(f"Table '{self.table_name}' ran out of rows!")
@@ -333,7 +325,7 @@ class Table:
 
         self._recreate_index_tree()
 
-        self.metadata.save_metadata()   # TODO - fix when automatic save of the Table is implemented
+        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
 
     def drop_table(self):
         if not os.path.exists(self.data_file_path) or not os.path.exists(self.metadata_file_path):
@@ -348,22 +340,27 @@ class Table:
             if col.column_name == column_name:
                 return col
 
+    def _add_row_to_indexes(self, node: TableNode):
+        for col, index in self.metadata.indexes.items():
+            index.add_element_to_index(node.row_data[col], node.position)
+
     def _recreate_index_tree(self):
         for _, index in self.metadata.indexes.items():
-            btree = self._create_index_tree(index.column.column_name)
-            index.index_tree = btree
-            index.save_index()   # TODO - fix when automatic save of the Table is implemented
+            index.delete_index()
+            new_index = TableIndex.create_index(index_name=index.index_name,
+                                                column=index.column,
+                                                index_path=index.index_path,
+                                                pointer_list_path=index.pointer_list_data_path)
+            self._create_index_tree(new_index)
 
-    def _create_index_tree(self, column_name):
-        btree = BTree(3)
-
+    def _create_index_tree(self, index: TableIndex):
+        index_column = index.column
         current_offset = self.metadata.first_offset
+
         while current_offset != -1:
             node = self.deserialize_table_node(current_offset)
             current_offset = node.next_position
-            btree.insert(node.row_data[column_name], node.position)
-
-        return btree
+            index.add_element_to_index(node.row_data[index_column.column_name], node.position)
 
     def create_new_index(self, index_name: str, column_name: str):
         column = self.find_column(column_name)
@@ -373,13 +370,14 @@ class Table:
         if self.metadata.indexes.search(column_name) is not None:
             raise ColumnError(f"Column '{column_name}' already has an index!")
 
-        btree = self._create_index_tree(column_name)
-
         index_path = os.path.join(self.directory, f"{index_name}.index")
-        new_index = TableIndex(index_name=index_name,
-                               column=column,
-                               index_path=index_path, index_tree=btree)
-        new_index.save_index()   # TODO - fix when automatic save of the Table is implemented
+        index_extra_data = os.path.join(self.directory, f"{index_name}.data")
+
+        new_index = TableIndex.create_index(index_name=index_name,
+                                            column=column,
+                                            index_path=index_path,
+                                            pointer_list_path=index_extra_data)
+        self._create_index_tree(new_index)
 
         self.metadata.indexes.insert(column_name, new_index)
         self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented

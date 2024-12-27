@@ -76,7 +76,6 @@ def create_index(table: Table, index_name: str, column_name: str):
 
 
 def drop_index(table: Table, index_name: str):
-
     table.drop_index(index_name)
 
 

@@ -30,13 +30,8 @@ class Metadata:
                 f.write(f"Columns:\n")
 
                 for column in self.columns:
-                    result = f" {column.column_name}|{column.column_type}"
-                    if column.default_value:
-                        result += f'|default:"{column.default_value}"'
+                    f.write(f" {column}\n")
 
-                    if column.is_primary_key:
-                        result += f"|primary_key"
-                    f.write(f"{result}\n")
                 f.write(f"Rows:{self.rows_count}\n")
                 f.write(f"Free Slots:{','.join(str(s) for s in self.free_slots)}\n")  # TODO - recreate .join()?
                 f.write(f"Table End:{self.table_end}\n")
@@ -63,16 +58,19 @@ class Metadata:
             parts = line.strip().split("|")  # TODO - recreate .split()
             col_name = parts[0]
             col_type = parts[1]
-            default_value = None
-            is_primary_key = False
 
-            if len(parts) > 2:
-                default_value = parts[2].split("default:")[0]
+            max_value = parts[2].split(":")[1]
+            default_value = parts[3].split(":")[1]
+            if default_value == "":
+                default_value = None
 
-                if len(parts) > 3:
-                    is_primary_key = True
+            is_primary_key = parts[4].split(":")[1]
 
-            columns.append(Column(col_name, col_type, default_value, is_primary_key))
+            columns.append(Column(column_name=col_name,
+                                  column_type=col_type,
+                                  max_value=max_value,
+                                  default_value=default_value,
+                                  is_primary_key=is_primary_key))
 
         rows_count = int(lines[columns_last_index].split(":")[1])
         columns_last_index += 1
@@ -98,10 +96,13 @@ class Metadata:
         indexes = HashTable()
         for index in initial_indexes:
             if index:
-                column_name, index_name, index_path = index.split("|")
+                column_name, index_name, index_path, pointer_list_data_path = index.split("|")
                 for column in columns:
                     if column.column_name == column_name:
-                        index = TableIndex(column=column, index_name=index_name, index_path=index_path)
+                        index = TableIndex(column=column,
+                                           index_name=index_name,
+                                           index_path=index_path,
+                                           pointer_list_data_path=pointer_list_data_path)
                         indexes[column_name] = index
 
         table_metadata.table_name = table_name
@@ -124,5 +125,5 @@ class Metadata:
         for col in self.columns:
             result += f"{col.column_name}: {col.column_type}\n"
         print(f"Columns: \n{result}", end="")
-        print(f"Indexes:{','.join(str(ind) for _, ind in self.indexes.items())}\n")
+        print(f"Indexes:{','.join(str(ind) for _, ind in self.indexes.items())}")
         print("-----------------------------")

@@ -10,7 +10,7 @@ email_domains = ["abv.bg", "gmail.com", "outlook.com"]
 
 def get_table_columns():
     return [Column("id", "number", is_primary_key=True),
-            Column("name", "string", default_value="No Name"),
+            Column("name", "string", default_value="No Name", max_value=50),
             Column("email", "string"),
             Column("created_at", "date")]
 
@@ -19,8 +19,8 @@ def get_table_insert_rows():
     table_insert_rows = []
 
     for i in range(1, 1001):
-        row = HashTable(4)
-        random_name_length = random.randint(1, 20)
+        row = HashTable(size=4)
+        random_name_length = random.randint(1, 40)
         random_email_length = random.randint(1, 5)
 
         row["id"] = i

@@ -5,6 +5,7 @@ def is_valid_number(value):
     except ValueError:
         return False
 
+
 # TODO - better date validation
 def is_valid_date(value):
     def is_leap_year(given_year):

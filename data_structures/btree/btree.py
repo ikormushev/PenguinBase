@@ -2,181 +2,11 @@ from datetime import datetime
 import struct
 from typing import List
 
+from data_structures.btree.btree_node_manager import BTreeNodeManager
+from data_structures.btree.pointer_list_manager import PointerListManager
 from data_structures.hash_table import HashTable
 from utils.binary_insertion_sort import binary_insertion_sort
 from utils.validators import is_valid_date
-
-
-class NodeManager:
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-
-        with open(self.file_path, "rb+") as file:
-            file.seek(0)
-            header_bytes = file.read(struct.calcsize("iqq1si"))
-            self.t, self.root_offset, self.eof, key_type, self.key_max_size = struct.unpack("iqq1si",
-                                                                                                 header_bytes)
-
-            self.key_type = key_type.decode()
-
-    def update_header(self):
-        with open(self.file_path, "rb+") as file:
-            header_data = struct.pack("iqq1si", self.t, self.root_offset, self.eof, self.key_type.encode(), self.key_max_size)
-            file.seek(0)
-            file.write(header_data)
-            file.flush()
-
-    @staticmethod
-    def create_node_manager(file_path, t, key_type, key_max_size):
-        with open(file_path, "wb+") as file:
-            header_bytes_size = struct.calcsize("iqq1si")
-            header_data = struct.pack("iqq1si", t, header_bytes_size, header_bytes_size, key_type.encode(), key_max_size)
-            file.seek(0)
-            file.write(header_data)
-            file.flush()
-
-        return NodeManager(file_path)
-
-    def save_node(self, offset: int | None, node_data: bytes) -> int:
-        with open(self.file_path, "rb+") as file:
-            if offset is None:
-                offset = self.eof
-            file.seek(offset)
-            file.write(node_data)
-            self.eof = max(self.eof, offset + len(node_data))
-            file.flush()
-
-        self.update_header()
-
-        return offset
-
-    def load_node(self, offset: int) -> bytes:
-        with open(self.file_path, 'rb') as file:
-            file.seek(offset)
-            node_size_bytes = struct.calcsize("i")
-            node_size = file.read(node_size_bytes)
-            length = struct.unpack("i", node_size)[0]
-            data = file.read(length)
-            if len(data) < length:
-                raise IOError("Not enough data read from file.")
-        return data
-
-
-class PointerListManager:
-    def __init__(self, file_path):
-        self.file_path = file_path
-
-        with open(self.file_path, "rb+") as file:
-            file.seek(0)
-            header_bytes = file.read(struct.calcsize("qq"))
-            self.free_slot, self.eof = struct.unpack("qq", header_bytes)
-
-    @staticmethod
-    def create_pointer_list_manager(file_path):
-        with open(file_path, "w+b") as file:
-            file.seek(0)
-            header_bytes = struct.calcsize("qq")
-            header_data = struct.pack("qq", header_bytes, header_bytes)
-            file.write(header_data)
-            file.flush()
-
-        return PointerListManager(file_path)
-
-    def update_header(self, file):
-        header_data = struct.pack("qq", self.free_slot, self.eof)
-        file.seek(0)
-        file.write(header_data)
-
-    def write_pointer(self, file, position: int, pointer_data: bytes):
-        file.seek(position)
-        file.write(pointer_data)
-
-    def read_pointer(self, file, position: int):
-        file.seek(position)
-        return file.read(struct.calcsize("qqq"))
-
-    def create_pointer_list(self, pointer: int):
-        pointer_data = struct.pack("qqq", -1, pointer, -1)
-        position = -1
-        with open(self.file_path, "rb+") as file:
-            self.write_pointer(file, self.free_slot, pointer_data)
-            position = self.free_slot
-
-            # TODO - fix when delete is available
-            self.eof += struct.calcsize("qqq")
-            self.free_slot = self.eof
-            self.update_header(file)
-
-            file.flush()
-
-        return position
-
-    def add_pointer_to_pointer_list(self, start_pointer: int, new_pointer: int):
-        position = start_pointer
-
-        with open(self.file_path, "rb+") as file:
-            while position != -1:
-                pointer_data = self.read_pointer(file, position)
-                prev, current, next_ptr = struct.unpack("qqq", pointer_data)
-
-                if next_ptr == -1:
-                    new_node = struct.pack("qqq", position, new_pointer, -1)
-                    self.write_pointer(file, self.free_slot, new_node)
-
-                    prev_node = struct.pack("qqq", prev, current, self.free_slot)
-                    self.write_pointer(file, position, prev_node)
-
-                    # TODO - fix when delete is available
-                    self.eof += struct.calcsize("qqq")
-                    self.free_slot = self.eof
-                    self.update_header(file)
-
-                position = next_ptr
-            file.flush()
-
-    # def delete_pointer_from_pointer_list(self, start_pointer: int, pointer_to_delete: int):
-    #     position = start_pointer
-    #     new_start_pointer = -1
-    #
-    #     with open(self.file_path, "rb+") as file:
-    #         while position != -1:
-    #             file.seek(position)
-    #             data = file.read(struct.calcsize("qqq"))
-    #             prev, current, next_ptr = struct.unpack("qqq", data)
-    #
-    #             if current == pointer_to_delete:
-    #                 if prev != -1:
-    #                     previoous_pointer_data = self.read_pointer(file, prev)
-    #                     prev_prev, prev_curr, prev_next = struct.unpack("qqq", previoous_pointer_data)
-    #                     previous_pointer_new_data = struct.pack("qqq", prev_prev, prev_curr, next_ptr)
-    #                     self.write_pointer(file, prev, previous_pointer_new_data)
-    #
-    #                 if next_ptr != -1:
-    #                     next_pointer_data = self.read_pointer(file, next_ptr)
-    #                     next_prev, next_curr, next_next = struct.unpack("qqq", next_pointer_data)
-    #                     new_start_pointer = next_ptr
-    #                     next_pointer_new_data = struct.pack("qqq", prev, prev_curr, next_next)
-    #                     self.write_pointer(file, next_ptr, next_pointer_new_data)
-    #
-    #                 self.free_slot = position
-    #                 break
-    #
-    #             position = next_ptr
-    #
-    #     if start_pointer == pointer_to_delete:
-    #         return new_start_pointer
-
-    def traverse_pointer_list(self, start_pointer: int):
-        position = start_pointer
-        pointers = []
-
-        with open(self.file_path, "rb") as file:
-            while position != -1:
-                curr_pointer_data = self.read_pointer(file, position)
-                prev_p, curr_p, next_p = struct.unpack("qqq", curr_pointer_data)
-                pointers.append(curr_p)
-                position = next_p
-        return pointers
 
 
 class BTreeNodeKey:
@@ -225,9 +55,9 @@ class BTreeNodeKey:
         key_data = b""
 
         if key_type == "I":
-            key_data = b"I" + struct.pack("q", self.key)  # TODO - later change to long long - q
+            key_data = b"I" + struct.pack("q", self.key)
         elif key_type == "F":
-            key_data = b"F" + struct.pack("d", self.key)  # TODO - later change to double - d
+            key_data = b"F" + struct.pack("d", self.key)
         elif key_type == "D":
             key_data = b"D" + self.key.encode()
         elif key_type == "S":
@@ -256,10 +86,10 @@ class BTreeNodeKey:
         key_max_size = None
 
         if key_type == b"I":
-            key = struct.unpack("q", key_data[offset:offset + 8])[0]  # TODO - later change to long long - q
+            key = struct.unpack("q", key_data[offset:offset + 8])[0]
             offset += 8
         elif key_type == b"F":
-            key = struct.unpack("d", key_data[offset:offset + 8])[0]  # TODO - later change to double - d
+            key = struct.unpack("d", key_data[offset:offset + 8])[0]
             offset += 8
         elif key_type == b"D":
             value_bytes = key_data[offset:offset + 10]
@@ -355,6 +185,7 @@ class BTreeNode:
         idx = 0
         while idx < len(self.keys) and key > self.keys[idx].key:
             idx += 1
+
         return idx
 
     def serialize_node(self, key_type, key_max_size) -> bytes:
@@ -417,6 +248,9 @@ class BTreeNode:
                          t=t,
                          offset=node_offset)
 
+    def __repr__(self):
+        return f"Offset: {self.offset} | Keys: {self.keys} | Children: {self.children}"
+
 
 class BTree:
     """
@@ -432,14 +266,18 @@ class BTree:
     """
 
     def __init__(self, node_file_path, pointer_file_path):
-        self.manager = NodeManager(node_file_path)
+        self.manager = BTreeNodeManager(node_file_path)
         self.pointer_manager = PointerListManager(pointer_file_path)
+
+    @property
+    def t(self):
+        return self.manager.t
 
     @staticmethod
     def create_tree(t, key_type, key_max_size, node_file_path, pointer_file_path):
         root = BTreeNode(t=t)
         root_bytes = root.serialize_node(key_type, key_max_size)
-        manager = NodeManager.create_node_manager(node_file_path, t, key_type, key_max_size)
+        manager = BTreeNodeManager.create_node_manager(node_file_path, t, key_type, key_max_size)
         pointer_manager = PointerListManager.create_pointer_list_manager(pointer_file_path)
         root_offset = manager.save_node(None, root_bytes)
 
@@ -571,12 +409,6 @@ class BTree:
         self._save_node(parent)
 
     def print_tree(self, node_offset: int | None = None, level=0):
-        """
-        Debugging method to print the structure of the B-tree.
-
-        Args:
-            level (int): The current level of the tree (used for indentation).
-        """
         if node_offset is None:
             node_offset = self.manager.root_offset
 
@@ -601,3 +433,253 @@ class BTree:
             return pointers
 
         return None
+
+    def _delete_from_node(self, node: BTreeNode, key):
+        """
+        Main points when a node is deleted:
+        - a node can have max t children
+        - a node should have min (t // 2) children
+        - a node can contaion max (t - 1) keys
+            - only a leaf node can have max t keys
+        - a node (except root) should contain min ((t/2) - 1) keys
+        """
+        idx = node.find_key_index(key)
+
+        if idx < len(node.keys) and node.keys[idx].key == key:
+            if node.is_leaf:
+                # Case 1: Key is in the leaf node
+                node.keys.pop(idx)  # TODO - .pop() allowed?
+            else:
+                # Case 2: Key is in an internal node - any node that is not a leaf
+                self._delete_internal_node(node, idx)
+            self._save_node(node)
+        else:
+            # Case 3: Key is not in this node
+            if node.is_leaf:
+                return
+
+            child_offset = node.children[idx]
+            child_node = self._load_node(child_offset)
+
+            if len(child_node.keys) < self.t:
+                self._fix_child(node, idx)
+                # self._save_node(node)  # TODO - probably not needed
+                child_node = self._load_node(node.children[idx])
+
+            # Recursively delete from the appropriate child
+            self._delete_from_node(child_node, key)
+            self._save_node(child_node)
+
+    def _delete_internal_node(self, node: BTreeNode, index: int):
+        """
+        Handle deletion when the key is in an internal node - any node that is not a leaf.
+        """
+        key = node.keys[index]
+        left_child_offset = node.children[index]
+        right_child_offset = node.children[index + 1]
+
+        left_child = self._load_node(left_child_offset)
+        right_child = self._load_node(right_child_offset)
+
+        if len(left_child.keys) >= self.t:
+            # Case 2.1: Use the predecessor - the largest key on the left child
+            pred = self._get_predecessor(node, index)
+            node.keys[index] = pred
+            self._save_node(node)
+
+            self._delete_from_node(left_child, pred.key)
+            # self._save_node(left_child) # TODO - probably not needed
+        elif len(right_child.keys) >= self.t:
+            # Case 2.2: Use the successor - the smallest key on the right child
+            succ = self._get_successor(node, index)
+            node.keys[index] = succ
+            self._save_node(node)
+
+            self._delete_from_node(right_child, succ.key)
+            # self._save_node(right_child) # TODO - probably not needed
+        else:
+            # Case 2.3: Merge the two children and delete
+            self._merge(node, index)
+            self._save_node(node)
+
+            merged_child_offset = node.children[index]
+            merged_child = self._load_node(merged_child_offset)
+            self._delete_from_node(merged_child, key.key)
+            self._save_node(merged_child)
+
+    def _fix_child(self, parent_node: BTreeNode, idx: int):
+        """
+        Ensure the child node has at least t keys by borrowing or merging.
+        Args:
+            node - the parent node
+            idx - the index of the child node
+        """
+        left_sibling_offset = None
+        right_sibling_offset = None
+
+        if idx > 0:
+            left_sibling_offset = parent_node.children[idx - 1]
+        if idx < len(parent_node.children) - 1:
+            right_sibling_offset = parent_node.children[idx + 1]
+
+        if left_sibling_offset is not None:
+            left_sibling = self._load_node(left_sibling_offset)
+
+            if len(left_sibling.keys) >= self.t:
+                # Borrow from the left sibling
+                self._borrow_from_left_sibling(parent_node, idx)
+                return
+
+        if right_sibling_offset is not None:
+            right_sibling = self._load_node(right_sibling_offset)
+
+            if len(right_sibling.keys) >= self.t:
+                # Borrow from the right sibling
+                self._borrow_from_right_sibling(parent_node, idx)
+                return
+
+        # Merge with a sibling
+        if right_sibling_offset is not None:
+            self._merge(parent_node, idx)  # left
+        else:
+            self._merge(parent_node, idx - 1)  # right
+
+    def _merge(self, parent_node: BTreeNode, idx: int):
+        """
+        Merge two children of a node at the given index.
+        """
+        left_child_offset = parent_node.children[idx]
+        left_child = self._load_node(left_child_offset)
+
+        right_child_offset = parent_node.children[idx + 1]
+        right_child = self._load_node(right_child_offset)
+
+        separator_key = parent_node.keys[idx]
+
+        left_child.keys.append(separator_key)
+        left_child.keys.extend(right_child.keys)
+
+        if not left_child.is_leaf:
+            left_child.children.extend(right_child.children)
+
+        parent_node.keys.pop(idx)
+        parent_node.children.pop(idx + 1)
+
+        self._save_node(parent_node)
+        self._save_node(left_child)
+        self._save_node(right_child)
+
+    def _borrow_from_left_sibling(self, parent_node: BTreeNode, idx: int):
+        """
+        Borrow a key from the left sibling.
+        Args:
+            node - the parent node
+            idx - the index of the child node
+        """
+        child_offset = parent_node.children[idx]
+        child = self._load_node(child_offset)
+
+        left_sibling_offset = parent_node.children[idx - 1]
+        left_sibling = self._load_node(left_sibling_offset)
+
+        # Move a key from the parent to the child
+        child.keys.insert(0, parent_node.keys[idx - 1])
+        parent_node.keys[idx - 1] = left_sibling.keys.pop()
+
+        if not child.is_leaf:
+            child.children.insert(0, left_sibling.children.pop())
+
+        self._save_node(parent_node)
+        self._save_node(child)
+        self._save_node(left_sibling)
+
+    def _borrow_from_right_sibling(self, parent_node: BTreeNode, idx: int):
+        """
+        Borrow a key from the right sibling.
+        Args:
+            node - the parent node
+            idx - the index of the child node
+        """
+        child_offset = parent_node.children[idx]
+        child = self._load_node(child_offset)
+
+        right_sibling_offset = parent_node.children[idx + 1]
+        right_sibling = self._load_node(right_sibling_offset)
+
+        # Move a key from the parent to the child
+        child.keys.append(parent_node.keys[idx])
+        parent_node.keys[idx] = right_sibling.keys.pop(0)
+
+        if not child.is_leaf:
+            child.children.append(right_sibling.children.pop(0))
+
+        self._save_node(parent_node)
+        self._save_node(child)
+        self._save_node(right_sibling)
+
+    def _get_predecessor(self, node: BTreeNode, index: int) -> BTreeNodeKey:
+        """
+        Get the predecessor - the largest key on the left child.
+        """
+        current = self._load_node(node.children[index])
+        while not current.is_leaf:
+            child_offset = current.children[-1]
+            current = self._load_node(child_offset)
+        return current.keys[-1]
+
+    def _get_successor(self, node: BTreeNode, index: int) -> BTreeNodeKey:
+        """
+        Get the successor - the smallest key on the right child.
+        """
+        current = self._load_node(node.children[index + 1])
+        while not current.is_leaf:
+            child_offset = current.children[0]
+            current = self._load_node(child_offset)
+        return current.keys[0]
+
+    def delete(self, key):
+        if self.manager.root_offset == -1:
+            return
+
+        root_node = self.root
+        self._delete_from_node(root_node, key)
+        self._save_node(root_node)
+
+        if not self.root.keys and not self.root.is_leaf:
+            if root_node.children:
+                self.manager.root_offset = root_node.children[0]
+            else:
+                self.manager.root_offset = -1
+            self.manager.update_header()
+
+    def delete_pointer(self, key, pointer: int):
+        searched_node_info = self.search(key)
+        if searched_node_info is None:
+            return
+
+        searched_node = searched_node_info["node"]
+        searched_key_index = searched_node_info["key_index"]
+
+        searched_key = searched_node.keys[searched_key_index]
+        main_pointer = searched_key.pointers[0]
+        secondary_pointer_to_file = searched_key.pointers[1]
+
+        if main_pointer == pointer:
+            if secondary_pointer_to_file == -1:
+                self.delete(key)
+                return
+            else:
+                new_main_pointer = self.pointer_manager.get_first_available_pointer(secondary_pointer_to_file)
+                searched_key.pointers[0] = new_main_pointer
+
+                new_secondary_pointer = self.pointer_manager.delete_pointer_from_pointer_list(secondary_pointer_to_file,
+                                                                                              new_main_pointer)
+                searched_key.pointers[1] = new_secondary_pointer
+                searched_node.keys[searched_key_index] = searched_key
+        else:
+            new_secondary_pointer = self.pointer_manager.delete_pointer_from_pointer_list(secondary_pointer_to_file,
+                                                                                          pointer)
+            searched_key.pointers[1] = new_secondary_pointer
+            searched_node.keys[searched_key_index] = searched_key
+
+        self._save_node(searched_node)

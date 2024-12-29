@@ -10,10 +10,12 @@ class HashNode:
 
 class HashTable:
     def __init__(self, pairs: list = None, size=10):
+        if pairs:
+            size = len(pairs)
         self.table_items: List[HashNode | None] = [None] * size
         self.size = size
 
-        if pairs is not None:
+        if pairs:
             for key, value in pairs:
                 self.insert(key, value)
 
@@ -82,3 +84,7 @@ class HashTable:
             while current:
                 yield current.key, current.value
                 current = current.next
+
+    def __repr__(self):
+        items = [f"{key}: {value}" for key, value in self.items()]
+        return "{" + ', '.join(items) + "}"

@@ -235,6 +235,8 @@ class Table:
         else:
             self.metadata.last_offset = node.previous_position
 
+        self._delete_row_from_indexes(node)
+
         node_size = len(self.serialize_table_node(node))
         self.metadata.free_slots.append(FreeSlot(node.position, node_size))
 
@@ -245,6 +247,9 @@ class Table:
         start_rows = self.metadata.rows_count
         current_offset = self.metadata.first_offset
         current_row = 1
+
+        if row_numbers.length > start_rows:
+            raise TableError(f"Too many rows! Table '{self.table_name}' has only {start_rows} rows!")
 
         while current_offset != -1 and row_numbers.length > 0:
             target_row = row_numbers.peek()
@@ -260,9 +265,6 @@ class Table:
             current_row += 1
 
         self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
-
-        if row_numbers.length > 0:
-            raise TableError(f"Table '{self.table_name}' ran out of rows!")
 
         # if self.metadata.rows_count > 0:
         #     fragmentation_percentage = (len(self.metadata.free_slots)
@@ -343,6 +345,10 @@ class Table:
     def _add_row_to_indexes(self, node: TableNode):
         for col, index in self.metadata.indexes.items():
             index.add_element_to_index(node.row_data[col], node.position)
+
+    def _delete_row_from_indexes(self, node: TableNode):
+        for col, index in self.metadata.indexes.items():
+            index.remove_element_from_index(node.row_data[col], node.position)
 
     def _recreate_index_tree(self):
         for _, index in self.metadata.indexes.items():

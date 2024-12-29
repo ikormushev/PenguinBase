@@ -1,6 +1,6 @@
 import os
 
-from data_structures.btree import BTree
+from data_structures.btree.btree import BTree
 from data_structures.hash_table import HashTable
 from db_components.column import Column
 
@@ -32,6 +32,9 @@ class TableIndex:
 
     def add_element_to_index(self, key, pointer: int):
         self.index_tree.insert(key, pointer)
+
+    def remove_element_from_index(self, key, pointer: int):
+        self.index_tree.delete_pointer(key, pointer)
 
     def delete_index(self):
         os.remove(self.index_path)

@@ -1,8 +1,8 @@
 import os
-
 from data_structures.btree.btree import BTree
 from data_structures.hash_table import HashTable
 from db_components.column import Column
+from utils.date import Date
 
 
 class TableIndex:
@@ -39,6 +39,27 @@ class TableIndex:
     def delete_index(self):
         os.remove(self.index_path)
         os.remove(self.pointer_list_data_path)
+
+    def search(self, key):
+        return self.index_tree.search(key)
+
+    def range_search(self, column, start=None, end=None):
+        default_ranges = []
+
+        column_type = column.column_type
+        if column_type == "string":
+            default_ranges = [" ", "~" * column.MAX_SIZE]
+        elif column_type == "number":
+            default_ranges = [-float("inf"), float("inf")]
+        elif column_type == "date":
+            default_ranges = [Date.from_string("01.01.0001"), Date.from_string("31.12.9999")]
+
+        if start is None:
+            start = default_ranges[0]
+        if end is None:
+            end = default_ranges[1]
+
+        yield from self.index_tree.range_search(start, end)
 
     def print_index(self):
         self.index_tree.print_tree()

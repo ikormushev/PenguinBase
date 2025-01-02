@@ -1,4 +1,3 @@
-from datetime import datetime
 import struct
 from typing import List
 
@@ -6,7 +5,7 @@ from data_structures.btree.btree_node_manager import BTreeNodeManager
 from data_structures.btree.pointer_list_manager import PointerListManager
 from data_structures.hash_table import HashTable
 from utils.binary_insertion_sort import binary_insertion_sort
-from utils.validators import is_valid_date
+from utils.date import Date
 
 
 class BTreeNodeKey:
@@ -23,7 +22,7 @@ class BTreeNodeKey:
             k_type = "I"
         elif isinstance(self.key, float):
             k_type = "F"
-        elif isinstance(self.key, str) and is_valid_date(self.key):
+        elif isinstance(self.key, Date):
             k_type = "D"
         elif isinstance(self.key, str):
             k_type = "S"
@@ -59,7 +58,7 @@ class BTreeNodeKey:
         elif key_type == "F":
             key_data = b"F" + struct.pack("d", self.key)
         elif key_type == "D":
-            key_data = b"D" + self.key.encode()
+            key_data = b"D" + f"{self.key}".encode()
         elif key_type == "S":
             encoded_key = self.key.encode()
             if len(encoded_key) < self.key_max_size:
@@ -86,15 +85,15 @@ class BTreeNodeKey:
         key_max_size = None
 
         if key_type == b"I":
-            key = struct.unpack("q", key_data[offset:offset + 8])[0]
+            key = int(struct.unpack("q", key_data[offset:offset + 8])[0])
             offset += 8
         elif key_type == b"F":
-            key = struct.unpack("d", key_data[offset:offset + 8])[0]
+            key = float(struct.unpack("d", key_data[offset:offset + 8])[0])
             offset += 8
         elif key_type == b"D":
             value_bytes = key_data[offset:offset + 10]
             offset += 10
-            key = value_bytes.decode()
+            key = Date.from_string(value_bytes.decode())
         elif key_type == b"S":
             length = struct.unpack("i", key_data[offset:offset + 4])[0]
             key_max_size = length
@@ -104,8 +103,6 @@ class BTreeNodeKey:
             offset += length
 
             key = value_bytes.decode().strip("\x00")  # TODO - recreate .strip()
-        else:
-            raise ValueError("Unsupported key type")
 
         real_pointer = struct.unpack_from("q", key_data[offset: offset + 8])[0]
         offset += 8
@@ -120,10 +117,8 @@ class BTreeNodeKey:
 
         if isinstance(self.key, (int, float)) and isinstance(other.key, (int, float)):
             return (self.key > other.key) - (self.key < other.key)
-        elif isinstance(self.key, str) and is_valid_date(self.key) and is_valid_date(other.key):
-            date_self = datetime.strptime(self.key, "%d.%m.%Y")
-            date_other = datetime.strptime(other.key, "%d.%m.%Y")
-            return (date_self > date_other) - (date_self < date_other)
+        elif isinstance(self.key, Date) and isinstance(other.key, Date):
+            return (self.key > other.key) - (self.key < other.key)
         elif isinstance(self.key, str) and isinstance(other.key, str):
             return (self.key > other.key) - (self.key < other.key)
         else:
@@ -303,7 +298,10 @@ class BTree:
         return self._load_node(self.manager.root_offset)
 
     def search(self, key) -> HashTable | None:
-        return self._search(self.manager.root_offset, key)
+        node_info = self._search(self.manager.root_offset, key)
+        if node_info:
+            return self.find_key_pointers(node_info)
+        return None
 
     def _search(self, node_offset: int, key) -> HashTable | None:
         i = 0
@@ -421,18 +419,13 @@ class BTree:
             for child_off in node.children:
                 self.print_tree(child_off, level + 1)
 
-    def find_key_pointers(self, key):
-        key_info = self.search(key)
-
-        if key_info:
-            key_node = key_info["node"]
-            key_index = key_info["key_index"]
-            actual_key = key_node.keys[key_index]
-            other_pointers_pointer = actual_key.pointers[1]
-            pointers = [actual_key.pointers[0]] + self.pointer_manager.traverse_pointer_list(other_pointers_pointer)
-            return pointers
-
-        return None
+    def find_key_pointers(self, key_info: HashTable):
+        key_node = key_info["node"]
+        key_index = key_info["key_index"]
+        actual_key = key_node.keys[key_index]
+        other_pointers_pointer = actual_key.pointers[1]
+        pointers = [actual_key.pointers[0]] + self.pointer_manager.traverse_pointer_list(other_pointers_pointer)
+        return pointers
 
     def _delete_from_node(self, node: BTreeNode, key):
         """
@@ -683,3 +676,25 @@ class BTree:
             searched_node.keys[searched_key_index] = searched_key
 
         self._save_node(searched_node)
+
+    def _range_search_node(self, node_offset: int, lower, upper):
+        i = 0
+        node = self._load_node(node_offset)
+
+        while i < len(node.keys) and node.keys[i].key < lower:
+            if not node.is_leaf:
+                yield from self._range_search_node(node.children[i], lower, upper)
+            i += 1
+
+        while i < len(node.keys) and node.keys[i].key <= upper:
+            if not node.is_leaf:
+                yield from self._range_search_node(node.children[i], lower, upper)
+
+            yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+            i += 1
+
+        if not node.is_leaf:
+            yield from self._range_search_node(node.children[i], lower, upper)
+
+    def range_search(self, lower, upper):
+        yield from self._range_search_node(self.manager.root_offset, lower, upper)

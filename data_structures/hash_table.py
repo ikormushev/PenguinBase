@@ -10,8 +10,6 @@ class HashNode:
 
 class HashTable:
     def __init__(self, pairs: list = None, size=10):
-        if pairs:
-            size = len(pairs)
         self.table_items: List[HashNode | None] = [None] * size
         self.size = size
 
@@ -34,11 +32,16 @@ class HashTable:
         else:
             # Collision resolution with chaining
             current = self.table_items[index]
+
+            if current.key == key:
+                current.value = value
+                return
+
             while current.next:
+                current = current.next
                 if current.key == key:
                     current.value = value
                     return
-                current = current.next
             current.next = new_node
 
     def __getitem__(self, key):
@@ -77,12 +80,18 @@ class HashTable:
     def delete(self, key):
         self.__delitem__(key)
 
-    # iteration over key-value pairs
     def items(self):
         for bucket in self.table_items:
             current = bucket
             while current:
                 yield current.key, current.value
+                current = current.next
+
+    def keys(self):
+        for bucket in self.table_items:
+            current = bucket
+            while current:
+                yield current.key
                 current = current.next
 
     def __repr__(self):

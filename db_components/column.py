@@ -1,27 +1,41 @@
 from abc import ABC, abstractmethod
 
 from data_structures.hash_table import HashTable
-from utils.validators import is_valid_date
+from utils.date import Date
+from utils.errors import ParseError
 
 
 class BaseValidator(ABC):
+    DEFAULT_MAX = 0
+
     @abstractmethod
     def validate_value_type(self, value):
-        ...
+        pass
 
     @abstractmethod
     def validate_value_size(self, value, max_value):
-        ...
-
-    @abstractmethod
-    def validate_max_value(self, value):
-        ...
-
-    @abstractmethod
-    def validate_default_value(self, value, max_value):
         pass
 
+    @abstractmethod
+    def validate_max_size(self, value):
+        pass
+
+    def validate_default(self, value, max_value):
+        if value is None:
+            return value
+
+        value = self.validate_value_type(value)
+        if max_value is None:
+            max_value = self.DEFAULT_MAX
+
+        self.validate_value_size(value, max_value)
+
+        return value
+
     def validate_primary_key(self, value):
+        if value is None:
+            return value
+
         if value == "True" or value == True:
             return True
         elif value == "False" or value == False:
@@ -34,27 +48,22 @@ class NumberValidator(BaseValidator):
     DEFAULT_MAX = 2_147_483_647
 
     def validate_value_type(self, value):
-        return float(value)  # TODO - raising a value by default
+        try:
+            new_value = float(value)
+            return new_value
+        except Exception:
+            raise ParseError("Unable to parse value!")
 
     def validate_value_size(self, value, max_value):
         if value > max_value:
             raise ValueError(f"Value cannot exceed {max_value}!")
 
-    def validate_max_value(self, value):
+    def validate_max_size(self, value):
         if value is None:
             return self.DEFAULT_MAX
 
         value = self.validate_value_type(value)
         self.validate_value_size(value, self.DEFAULT_MAX)
-
-        return value
-
-    def validate_default_value(self, value, max_value):
-        if value is None:
-            return value
-
-        value = self.validate_value_type(value)
-        self.validate_value_size(value, max_value)
 
         return value
 
@@ -71,34 +80,26 @@ class StringValidator(BaseValidator):
         if len(value) > max_value:
             raise ValueError(f"Value has to be less than {max_value} characters!")
 
-    def validate_max_value(self, value):
+    def validate_max_size(self, value):
         if value is None:
             return self.DEFAULT_MAX
 
         return int(value)
-
-    def validate_default_value(self, value, max_value):
-        if value is None:
-            return value
-
-        value = self.validate_value_type(value)
-        self.validate_value_size(value, max_value)
-        return value
 
 
 class DateValidator(BaseValidator):
     DEFAULT_MAX = 10
 
     def validate_value_type(self, value):
-        if not is_valid_date(value):
+        if not Date.is_valid_date_string(value):
             raise ValueError(f"Invalid value!")
-        return value
+        return Date.from_string(value)  # raises a ValueError by default if months and days do not match
 
     def validate_value_size(self, value, max_value):
         if len(value) != max_value:
             raise ValueError(f"Value has to be {max_value} characters!")
 
-    def validate_max_value(self, value):
+    def validate_max_size(self, value):
         if value is None:
             return self.DEFAULT_MAX
 
@@ -108,38 +109,49 @@ class DateValidator(BaseValidator):
 
         raise ValueError(f"Cannot set a max size to 'date' type!")
 
-    def validate_default_value(self, value, max_value):
-        if value is None:
-            return value
-
-        value = self.validate_value_type(value)
-
-        # TODO - check not really needed, since is_valid_date already checks the size
-        self.validate_value_size(value, max_value)
-
-        return value
-
 
 class Column:
     COLUMN_TYPES = HashTable([("number", NumberValidator()),
                               ("string", StringValidator()),
                               ("date", DateValidator())])
 
-    def __init__(self, column_name: str, column_type: str, max_value=None, default_value=None, is_primary_key=False):
+    EVALUATION_ORDER = ["MAX_SIZE", "DEFAULT", "PRIMARY_KEY"]
+
+    def __init__(self, column_name: str, column_type: str, given_constraints: HashTable):
         self.column_name = column_name
         self.column_type = column_type
         self.column_validator = self.COLUMN_TYPES.search(column_type)
 
-        self.is_primary_key = is_primary_key
-        self.max_value = max_value
-        self.default_value = default_value
+        self.constraints = HashTable([
+            ("DEFAULT", None),
+            ("MAX_SIZE", self.column_validator.validate_max_size(None)),
+            ("PRIMARY_KEY", False)])
+
+        for constraint in self.EVALUATION_ORDER:
+            if constraint in given_constraints.keys():
+                self._set_constraint(constraint, given_constraints[constraint])
+
+    def _set_constraint(self, constraint, value):
+        validated_value = self._validate_constraint(constraint, value)
+        self.constraints[constraint] = validated_value
+
+    def _validate_constraint(self, constraint, value):
+        validation_methods = HashTable([("DEFAULT", self.column_validator.validate_default),
+                                        ("MAX_SIZE", self.column_validator.validate_max_size),
+                                        ("PRIMARY_KEY", self.column_validator.validate_primary_key)])
+
+        if constraint == "DEFAULT":
+            return validation_methods[constraint](value, self.constraints["MAX_SIZE"])
+        return validation_methods[constraint](value)
 
     def __str__(self):
-        return (f"{self.column_name}|"
-                f"{self.column_type}|"
-                f"MAX_SIZE:{self.max_value}|"
-                f"DEFAULT:{self.default_value if self.default_value else ''}|"
-                f"PRIMARY_KEY:{self.is_primary_key}")
+        column_result = f"{self.column_name}|{self.column_type}"
+
+        for constraint, value in self.constraints.items():
+            if value:
+                column_result += f"|{constraint}:{value}"
+
+        return column_result
 
     @property
     def column_type(self):
@@ -153,29 +165,17 @@ class Column:
         self.__column_type = value
 
     @property
-    def max_value(self):
-        return self.__max_value
-
-    @max_value.setter
-    def max_value(self, value):
-        self.__max_value = self.column_validator.validate_max_value(value)
+    def MAX_SIZE(self):
+        return self.constraints["MAX_SIZE"]
 
     @property
-    def default_value(self):
-        return self.__default_value
-
-    @default_value.setter
-    def default_value(self, value):
-        self.__default_value = self.column_validator.validate_default_value(value, self.max_value)
+    def DEFAULT(self):
+        return self.constraints["DEFAULT"]
 
     @property
-    def is_primary_key(self):
-        return self.__is_primary_key
-
-    @is_primary_key.setter
-    def is_primary_key(self, value):
-        self.__is_primary_key = self.column_validator.validate_primary_key(value)
+    def PRIMARY_KEY(self):
+        return self.constraints["PRIMARY_KEY"]
 
     def validate_column_value(self, value):
         self.column_validator.validate_value_type(value)
-        self.column_validator.validate_value_size(value, self.max_value)
+        self.column_validator.validate_value_size(value, self.MAX_SIZE)

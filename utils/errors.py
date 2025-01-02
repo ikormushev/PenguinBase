@@ -3,13 +3,9 @@ class BaseDatabaseError(Exception):
         self.message = message
 
 
-class InvalidCommandError(BaseDatabaseError):
-    ...
-
-
 class TableError(BaseDatabaseError):
     ...
 
 
-class ColumnError(BaseDatabaseError):
+class ParseError(BaseDatabaseError):
     ...

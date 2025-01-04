@@ -39,33 +39,33 @@ class QueryParser:
         """
             Check if the current token matches the given type, then advance. If not, raise error.
         """
-        if self.current_token.type == token_type:
+        if self.current_token.token_type == token_type:
             self.advance()
         else:
-            self.error(f"Expected token type {token_type}, got {self.current_token.type}")
+            self.error(f"Expected token type {token_type}, got {self.current_token.token_type}")
 
     def parse(self):
         """
             Entry point for parsing a single statement.
         """
-        if self.current_token.type == TokenType.CREATE:
+        if self.current_token.token_type == TokenType.CREATE:
             return self.parse_create()
-        elif self.current_token.type == TokenType.DROP:
+        elif self.current_token.token_type == TokenType.DROP:
             return self.parse_drop()
-        elif self.current_token.type == TokenType.TABLEINFO:
+        elif self.current_token.token_type == TokenType.TABLEINFO:
             return self.parse_tableinfo()
-        elif self.current_token.type == TokenType.INSERT:
+        elif self.current_token.token_type == TokenType.INSERT:
             return self.parse_insert()
-        elif self.current_token.type == TokenType.GET:
+        elif self.current_token.token_type == TokenType.GET:
             return self.parse_get()
-        elif self.current_token.type == TokenType.DELETE:
+        elif self.current_token.token_type == TokenType.DELETE:
             return self.parse_delete()
-        elif self.current_token.type == TokenType.SELECT:
+        elif self.current_token.token_type == TokenType.SELECT:
             return self.parse_select()
-        elif self.current_token.type == TokenType.DEFRAGMENT:
+        elif self.current_token.token_type == TokenType.DEFRAGMENT:
             return self.parse_defragment()
         else:
-            self.error(f"Unknown statement starting with token {self.current_token.type}")
+            self.error(f"Unknown statement starting with token {self.current_token.token_type}")
 
     @staticmethod
     def check_end_decorator(func):
@@ -83,9 +83,9 @@ class QueryParser:
     @check_end_decorator
     def parse_create(self):
         self.match(TokenType.CREATE)
-        if self.current_token.type == TokenType.TABLE:
+        if self.current_token.token_type == TokenType.TABLE:
             return self.parse_create_table()
-        elif self.current_token.type == TokenType.INDEX:
+        elif self.current_token.token_type == TokenType.INDEX:
             return self.parse_create_index()
         else:
             self.error("Expected TABLE or INDEX after CREATE")
@@ -100,11 +100,11 @@ class QueryParser:
 
         columns = []
 
-        while self.current_token.type != TokenType.RPAREN:
+        while self.current_token.token_type != TokenType.RPAREN:
             col_name_token = self.current_token
             self.match(TokenType.IDENTIFIER)
 
-            if self.current_token.type == TokenType.COLON:
+            if self.current_token.token_type == TokenType.COLON:
                 self.advance()
             else:
                 self.error("Expected ':' in column definition")
@@ -114,28 +114,28 @@ class QueryParser:
 
             constraints = HashTable()
 
-            while self.current_token.type in [TokenType.DEFAULT, TokenType.PRIMARY_KEY, TokenType.MAX_SIZE]:
+            while self.current_token.token_type in [TokenType.DEFAULT, TokenType.PRIMARY_KEY, TokenType.MAX_SIZE]:
                 constraint_name = self.current_token.value
-                self.match(self.current_token.type)
+                self.match(self.current_token.token_type)
 
-                if self.current_token.type == TokenType.COLON:
+                if self.current_token.token_type == TokenType.COLON:
                     self.advance()
                 else:
                     self.error(f"Expected ':' after constraint name '{constraint_name}'")
 
                 constraint_value = self.current_token.value
-                if self.current_token.type == TokenType.NUMBER:
+                if self.current_token.token_type == TokenType.NUMBER:
                     self.match(TokenType.NUMBER)
-                elif self.current_token.type == TokenType.FLOAT:
+                elif self.current_token.token_type == TokenType.FLOAT:
                     self.match(TokenType.FLOAT)
-                elif self.current_token.type == TokenType.DATE:
+                elif self.current_token.token_type == TokenType.DATE:
                     self.match(TokenType.DATE)
                 else:
                     self.match(TokenType.STRING)
 
                 constraints[constraint_name] = constraint_value
 
-                if self.current_token.type == TokenType.COMMA or self.current_token.type == TokenType.RPAREN:
+                if self.current_token.token_type == TokenType.COMMA or self.current_token.token_type == TokenType.RPAREN:
                     break
 
             col_def = ColumnDef(
@@ -145,7 +145,7 @@ class QueryParser:
             )
             columns.append(col_def)
 
-            if self.current_token.type == TokenType.COMMA:
+            if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
             else:
                 break
@@ -181,9 +181,9 @@ class QueryParser:
     def parse_drop(self):
         self.match(TokenType.DROP)
 
-        if self.current_token.type == TokenType.TABLE:
+        if self.current_token.token_type == TokenType.TABLE:
             return self.parse_drop_table()
-        elif self.current_token.type == TokenType.INDEX:
+        elif self.current_token.token_type == TokenType.INDEX:
             return self.parse_drop_index()
         else:
             self.error("Expected TABLE or INDEX after DROP")
@@ -222,18 +222,18 @@ class QueryParser:
         self.match(TokenType.LPAREN)
 
         columns = []
-        while self.current_token.type != TokenType.RPAREN:
+        while self.current_token.token_type != TokenType.RPAREN:
             columns.append(self.current_token.value)
             self.match(TokenType.IDENTIFIER)
-            if self.current_token.type == TokenType.COMMA:
+            if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
             else:
                 break
         self.match(TokenType.RPAREN)
 
-        if self.current_token.type == TokenType.VALUES:
+        if self.current_token.token_type == TokenType.VALUES:
             return self.parse_insert_values(columns, table_name_token.value)
-        elif self.current_token.type == TokenType.RANDOM:
+        elif self.current_token.token_type == TokenType.RANDOM:
             return self.parse_insert_random(columns, table_name_token.value)
         else:
             self.error("Expected VALUES or RANDOM!")
@@ -242,7 +242,7 @@ class QueryParser:
         self.match(TokenType.RANDOM)
 
         count = None
-        if self.current_token.type == TokenType.NUMBER:
+        if self.current_token.token_type == TokenType.NUMBER:
             count = int(self.current_token.value)
             self.advance()
 
@@ -262,10 +262,10 @@ class QueryParser:
             self.match(TokenType.LPAREN)
             row_values = []
 
-            while self.current_token.type != TokenType.RPAREN:
+            while self.current_token.token_type != TokenType.RPAREN:
                 row_values.append(self.current_token.value)
                 self.advance()
-                if self.current_token.type == TokenType.COMMA:
+                if self.current_token.token_type == TokenType.COMMA:
                     self.advance()
                 else:
                     break
@@ -280,7 +280,7 @@ class QueryParser:
 
             rows.append(row)
 
-            if self.current_token.type == TokenType.COMMA:
+            if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
             else:
                 break
@@ -295,10 +295,10 @@ class QueryParser:
         self.match(TokenType.GET)
         self.match(TokenType.ROW)
         row_numbers = []
-        while self.current_token.type == TokenType.NUMBER:
+        while self.current_token.token_type == TokenType.NUMBER:
             row_numbers.append(int(self.current_token.value))
             self.advance()
-            if self.current_token.type == TokenType.COMMA:
+            if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
             else:
                 break
@@ -315,9 +315,9 @@ class QueryParser:
         table_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
 
-        if self.current_token.type == TokenType.ROW:
+        if self.current_token.token_type == TokenType.ROW:
             return self.parse_delete_row(table_name_token.value)
-        elif self.current_token.type == TokenType.WHERE:
+        elif self.current_token.token_type == TokenType.WHERE:
             return self.parse_delete_where(table_name_token.value)
         else:
             self.error("Expected ROW or WHERE after DELETE FROM <table_name>")
@@ -326,10 +326,10 @@ class QueryParser:
         self.match(TokenType.ROW)
 
         row_numbers = []
-        while self.current_token.type == TokenType.NUMBER:
+        while self.current_token.token_type == TokenType.NUMBER:
             row_numbers.append(int(self.current_token.value))
             self.advance()
-            if self.current_token.type == TokenType.COMMA:
+            if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
             else:
                 break
@@ -349,17 +349,17 @@ class QueryParser:
         self.match(TokenType.SELECT)
 
         distinct = False
-        if self.current_token.type == TokenType.DISTINCT:
+        if self.current_token.token_type == TokenType.DISTINCT:
             distinct = True
             self.advance()
 
         columns = []
-        while self.current_token.type != TokenType.FROM:
+        while self.current_token.token_type != TokenType.FROM:
             columns.append(self.current_token.value)
             self.advance()
-            if self.current_token.type == TokenType.COMMA:
+            if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
-            elif self.current_token.type == TokenType.EOF:
+            elif self.current_token.token_type == TokenType.EOF:
                 self.error("Unexpected EOF in SELECT columns")
 
         if len(columns) < 1:
@@ -371,28 +371,25 @@ class QueryParser:
         table_name = table_name_token.value
 
         where_expr = None
-        if self.current_token.type == TokenType.WHERE:
+        if self.current_token.token_type == TokenType.WHERE:
             self.advance()
             where_expr = self.parse_condition_ast()   # ExpressionNode
 
-        order_by = []
-        if self.current_token.type == TokenType.ORDER:
+        order_by = None
+
+        if self.current_token.token_type == TokenType.ORDER:
             self.advance()
             self.match(TokenType.BY)
-            while self.current_token.type not in (TokenType.EOF, TokenType.UNKNOWN):
-                col_name = self.current_token.value
-                self.advance()
-                direction = 'ASC'
-
-                if (self.current_token.type == TokenType.IDENTIFIER and
-                        self.current_token.value in ('ASC', 'DESC')):
-                    direction = self.current_token.value.upper()
-                    self.advance()
-                order_by.append(OrderByItem(col_name, direction))
-                if self.current_token.type == TokenType.COMMA:
+            col_name = self.current_token.value
+            self.advance()
+            direction = 'ASC'
+            if self.current_token.token_type == TokenType.IDENTIFIER:
+                if self.current_token.value in ('ASC', 'DESC'):
+                    direction = self.current_token.value
                     self.advance()
                 else:
-                    break
+                    self.error("Direction can be either ASC or DESC!")
+            order_by = OrderByItem(col_name, direction)
 
         return st.SelectStatement(
             columns=columns,
@@ -410,7 +407,7 @@ class QueryParser:
 
     def parse_or_expr(self):
         node = self.parse_and_expr()
-        while self.current_token.type == TokenType.OR:
+        while self.current_token.token_type == TokenType.OR:
             operator = self.current_token.value.upper()
             self.advance()
             right = self.parse_and_expr()
@@ -420,7 +417,7 @@ class QueryParser:
 
     def parse_and_expr(self):
         node = self.parse_not_expr()
-        while self.current_token.type == TokenType.AND:
+        while self.current_token.token_type == TokenType.AND:
             operator = self.current_token.value.upper()
             self.advance()
             right = self.parse_not_expr()
@@ -429,14 +426,14 @@ class QueryParser:
         return node
 
     def parse_not_expr(self):
-        if self.current_token.type == TokenType.NOT:
+        if self.current_token.token_type == TokenType.NOT:
             self.advance()
             expr = self.parse_not_expr()
             return NotNode(expr)
         return self.parse_primary()
 
     def parse_primary(self):
-        if self.current_token.type == TokenType.LPAREN:
+        if self.current_token.token_type == TokenType.LPAREN:
             self.match(TokenType.LPAREN)
             node = self.parse_condition_ast()
             self.match(TokenType.RPAREN)
@@ -446,7 +443,7 @@ class QueryParser:
 
     def parse_comparison(self):
         left = self.parse_value()
-        if self.current_token.type in [TokenType.EQ, TokenType.NEQ, TokenType.LT,
+        if self.current_token.token_type in [TokenType.EQ, TokenType.NEQ, TokenType.LT,
                                        TokenType.GT, TokenType.LEQ, TokenType.GEQ]:
             operator = self.current_token.value
             self.advance()
@@ -457,26 +454,26 @@ class QueryParser:
     def parse_value(self):
         curr_token = self.current_token
 
-        if curr_token.type == TokenType.STRING:
+        if curr_token.token_type == TokenType.STRING:
             self.advance()
             return ValueNode(curr_token.value)
-        elif curr_token.type == TokenType.DATE:
+        elif curr_token.token_type == TokenType.DATE:
             self.advance()
             return ValueNode(Date.from_string(curr_token.value))
-        elif curr_token.type == TokenType.NUMBER:
+        elif curr_token.token_type == TokenType.NUMBER:
             self.advance()
             return ValueNode(int(curr_token.value))
-        elif curr_token.type == TokenType.FLOAT:
+        elif curr_token.token_type == TokenType.FLOAT:
             self.advance()
             return ValueNode(float(curr_token.value))
-        elif curr_token.type == TokenType.IDENTIFIER:
+        elif curr_token.token_type == TokenType.IDENTIFIER:
             self.advance()
             return ValueNode(curr_token.value, is_column=True)
         else:
             self.error(f"Unexpected token in value: {curr_token}")
 
     def validate_no_extra_tokens(self):
-        if self.current_token.type not in [
+        if self.current_token.token_type not in [
             TokenType.AND,
             TokenType.OR,
             TokenType.NOT,

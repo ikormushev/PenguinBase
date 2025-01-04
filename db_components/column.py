@@ -9,7 +9,7 @@ class BaseValidator(ABC):
     DEFAULT_MAX = 0
 
     @abstractmethod
-    def validate_value_type(self, value):
+    def _validate_value_type(self, value):
         pass
 
     @abstractmethod
@@ -20,11 +20,14 @@ class BaseValidator(ABC):
     def validate_max_size(self, value):
         pass
 
+    def convert_from_string_to_type(self, value):
+        return self._validate_value_type(value)
+
     def validate_default(self, value, max_value):
         if value is None:
             return value
 
-        value = self.validate_value_type(value)
+        value = self._validate_value_type(value)
         if max_value is None:
             max_value = self.DEFAULT_MAX
 
@@ -47,12 +50,16 @@ class BaseValidator(ABC):
 class NumberValidator(BaseValidator):
     DEFAULT_MAX = 2_147_483_647
 
-    def validate_value_type(self, value):
+    def _validate_value_type(self, value):
         try:
-            new_value = float(value)
+            new_value = int(value)
             return new_value
-        except Exception:
-            raise ParseError("Unable to parse value!")
+        except ValueError:
+            try:
+                new_value = float(value)
+                return new_value
+            except ValueError:
+                raise ParseError("Unable to parse value!")
 
     def validate_value_size(self, value, max_value):
         if value > max_value:
@@ -62,7 +69,7 @@ class NumberValidator(BaseValidator):
         if value is None:
             return self.DEFAULT_MAX
 
-        value = self.validate_value_type(value)
+        value = self._validate_value_type(value)
         self.validate_value_size(value, self.DEFAULT_MAX)
 
         return value
@@ -71,7 +78,7 @@ class NumberValidator(BaseValidator):
 class StringValidator(BaseValidator):
     DEFAULT_MAX = 255
 
-    def validate_value_type(self, value):
+    def _validate_value_type(self, value):
         if not isinstance(value, str) or not value.strip():  # TODO - recreate .strip() ?
             raise ValueError(f"Value cannot be empty!")
         return value
@@ -90,7 +97,7 @@ class StringValidator(BaseValidator):
 class DateValidator(BaseValidator):
     DEFAULT_MAX = 10
 
-    def validate_value_type(self, value):
+    def _validate_value_type(self, value):
         if not Date.is_valid_date_string(value):
             raise ValueError(f"Invalid value!")
         return Date.from_string(value)  # raises a ValueError by default if months and days do not match
@@ -176,6 +183,8 @@ class Column:
     def PRIMARY_KEY(self):
         return self.constraints["PRIMARY_KEY"]
 
-    def validate_column_value(self, value):
-        self.column_validator.validate_value_type(value)
+    def validate_column_value_size(self, value):
         self.column_validator.validate_value_size(value, self.MAX_SIZE)
+
+    def convert_from_string_to_column_value(self, value):
+        return self.column_validator.convert_from_string_to_type(value)

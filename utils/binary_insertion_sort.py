@@ -1,4 +1,4 @@
-def binary_insertion_sort(keys: list) -> list:
+def binary_insertion_sort(keys: list, order: str = 'ASC') -> list:
     """
     Perform in-place sorting of a list using Binary Insertion Sort.
 
@@ -12,18 +12,20 @@ def binary_insertion_sort(keys: list) -> list:
     - Worst Case: O(n^2)
     - Space: O(n)
     """
+    if order not in ('ASC', 'DESC'):
+        raise ValueError("Invalid order. Use 'ASC' for ascending or 'DESC' for descending.")
 
     for i in range(1, len(keys)):
         key_to_insert = keys[i]
 
-        pos = binary_search(keys, key_to_insert, 0, i - 1)
+        pos = binary_search(keys, key_to_insert, 0, i - 1, order)
 
         # Insert the element at the new position and skip the previous position
         keys = keys[:pos] + [key_to_insert] + keys[pos:i] + keys[i + 1:]
     return keys
 
 
-def binary_search(keys: list, key_to_insert, low: int, high: int) -> int:
+def binary_search(keys: list, key_to_insert, low: int, high: int, order: str) -> int:
     """
     Perform Binary Search to find the position to insert an
     element in a sorted portion of a list.
@@ -37,13 +39,12 @@ def binary_search(keys: list, key_to_insert, low: int, high: int) -> int:
 
     Returns:
     int: The index where `key_to_insert` should be inserted.
-
     """
 
     while low <= high:
         mid = (low + high) // 2
 
-        if keys[mid] < key_to_insert:
+        if (order == 'ASC' and keys[mid] < key_to_insert) or (order == 'DESC' and keys[mid] > key_to_insert):
             low = mid + 1
         else:
             high = mid - 1

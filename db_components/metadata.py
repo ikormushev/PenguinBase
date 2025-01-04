@@ -1,12 +1,11 @@
 import os
-from typing import List
 
 from data_structures.hash_table import HashTable
 from db_components.column import Column
 from db_components.freeslot import FreeSlot
 from db_components.index import TableIndex
 from utils.errors import TableError
-from utils.extra import format_size
+from utils.extra import format_size, polynomial_rolling_hash
 
 
 class Metadata:
@@ -24,26 +23,33 @@ class Metadata:
         self.indexes = HashTable()
 
     def save_metadata(self):
-        indexes = [index for index in self.indexes.items()]
+        metadata_content = [
+            f"Title:{self.table_name}\n",
+            f"Total Columns:{len(self.columns)}\n",
+            "Columns:\n"
+        ]
+        for _, column in self.columns.items():
+            metadata_content.append(f"{column}\n")
+
+        metadata_content.append(f"Rows:{self.rows_count}\n")
+        metadata_content.append(f"Free Slots:{','.join(str(s) for s in self.free_slots)}\n")  # TODO - recreate .join()?
+        metadata_content.append(f"Table End:{self.table_end}\n")
+        metadata_content.append(f"Offsets:{self.first_offset}|{self.last_offset}\n")
+
+        metadata_content.append(f"Indexes:{len(self.indexes)}")  # TODO - recreate .join()?
+        for _, ind in self.indexes.items():
+            metadata_content.append(f"\n{ind}")
+
+        metadata_str = "".join(metadata_content)
+        metadata_hash = polynomial_rolling_hash(metadata_str.encode())
+
         try:
             with open(self.metadata_file_path, "w") as f:
-                f.write(f"Title:{self.table_name}\n")
-                f.write(f"Total Columns:{self.columns.size}\n")
-                f.write(f"Columns:\n")
-
-                for _, column in self.columns.items():
-                    f.write(f" {column}\n")
-
-                f.write(f"Rows:{self.rows_count}\n")
-                f.write(f"Free Slots:{','.join(str(s) for s in self.free_slots)}\n")  # TODO - recreate .join()?
-                f.write(f"Table End:{self.table_end}\n")
-                f.write(f"Offsets:{self.first_offset}|{self.last_offset}\n")
-
-                f.write(f"Indexes:{len(indexes)}")  # TODO - recreate .join()?
-                for _, ind in indexes:
-                    f.write(f"\n{ind}")
+                f.write(f"Total Lines:{len(metadata_content)}\n")
+                f.write(f"Hash:{metadata_hash}\n")
+                f.write(metadata_str)
         except Exception as e:
-            raise TableError("Error with table!")
+            raise TableError("Error saving the metadata")
 
     @staticmethod
     def load_metadata(metadata_file: str):
@@ -52,29 +58,48 @@ class Metadata:
         with open(metadata_file) as f:
             lines = f.readlines()
 
-        table_name = lines[0][:-1].split(":")[1]  # TODO - recreate .split()
-        columns_count = int(lines[1].split(":")[1])  # TODO - recreate .split()
+        curr_index = 0
+        total_lines = int(lines[curr_index].split(":")[1][:-1])
+        if len(lines) != total_lines + 2:
+            raise TableError("Table metadata file does not have the correct number of lines")
+        curr_index += 1
+
+        table_hash_number = int(lines[curr_index].split(":")[1][:-1])
+        curr_index += 1
+        metadata_str = "".join(lines[curr_index:])
+        metadata_hash = polynomial_rolling_hash(metadata_str.encode())
+        if table_hash_number != metadata_hash:
+            raise TableError("Table metadata hash does not match")
+
+        table_name = lines[curr_index][:-1].split(":")[1]  # TODO - recreate .split()
+        curr_index += 1
+
+        columns_count = int(lines[curr_index].split(":")[1])  # TODO - recreate .split()
+        curr_index += 1
 
         columns = HashTable(size=columns_count)
-        columns_last_index = 3 + columns_count
+        curr_index += 1
+        columns_last_index = curr_index + columns_count
 
-        for line in lines[3:columns_last_index]:
-            parts = line.strip().split("|")  # TODO - recreate .split()
+        for line in lines[curr_index:columns_last_index]:
+            parts = line[:-1].split("|")  # TODO - recreate .split()
             col_name = parts[0]
             col_type = parts[1]
 
             constraints = HashTable()
-            curr_index = 2
-            while curr_index < len(parts):
-                constraint_name, constraint_value = parts[curr_index].split(":")
+            col_index = 2
+            while col_index < len(parts):
+                constraint_name, constraint_value = parts[col_index].split(":")   # TODO - recreate .split()
                 constraints[constraint_name] = constraint_value
-                curr_index += 1
+                col_index += 1
             columns[col_name] = Column(column_name=col_name, column_type=col_type, given_constraints=constraints)
 
-        rows_count = int(lines[columns_last_index].split(":")[1])
-        columns_last_index += 1
-        initial_free_slots = lines[columns_last_index][:-1].split(":")[1].split(",")  # TODO - recreate .split()
-        columns_last_index += 1
+        curr_index += columns_count
+
+        rows_count = int(lines[curr_index].split(":")[1])   # TODO - recreate .split()
+        curr_index += 1
+        initial_free_slots = lines[curr_index][:-1].split(":")[1].split(",")  # TODO - recreate .split()
+        curr_index += 1
 
         free_slots = []
         for free_slot in initial_free_slots:
@@ -83,20 +108,20 @@ class Metadata:
                 slot = FreeSlot(slot_position=int(slot_pos), slot_length=int(slot_len))
                 free_slots.append(slot)
 
-        table_end = int(lines[columns_last_index].split(":")[1])   # TODO - recreate .split()
-        columns_last_index += 1
+        table_end = int(lines[curr_index].split(":")[1])   # TODO - recreate .split()
+        curr_index += 1
 
-        first_offset, last_offset = lines[columns_last_index].split(":")[1].split("|")   # TODO - recreate .split()
-        columns_last_index += 1
+        first_offset, last_offset = lines[curr_index].split(":")[1].split("|")   # TODO - recreate .split()
+        curr_index += 1
         first_offset = int(first_offset)
         last_offset = int(last_offset)
 
         indexes = HashTable()
-        total_indexes_count = int(lines[columns_last_index].split(":")[1])   # TODO - recreate .split()
-        columns_last_index += 1
+        total_indexes_count = int(lines[curr_index].split(":")[1])   # TODO - recreate .split()
+        curr_index += 1
 
         for _ in range(total_indexes_count):
-            index_info = lines[columns_last_index].split("|")   # TODO - recreate .split()
+            index_info = lines[curr_index].split("|")   # TODO - recreate .split()
             column_name = index_info[0]
             index_name = index_info[1]
             index_path = index_info[2]
@@ -107,6 +132,7 @@ class Metadata:
                                index_path=index_path,
                                pointer_list_data_path=pointer_list_data_path)
             indexes[column_name] = index
+            curr_index += 1
 
         table_metadata.table_name = table_name
         table_metadata.columns = columns
@@ -116,6 +142,7 @@ class Metadata:
         table_metadata.first_offset = first_offset
         table_metadata.last_offset = last_offset
         table_metadata.indexes = indexes
+
         return table_metadata
 
     def display_table_metadata(self, data_path: str):

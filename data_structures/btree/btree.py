@@ -6,6 +6,7 @@ from data_structures.btree.pointer_list_manager import PointerListManager
 from data_structures.hash_table import HashTable
 from utils.binary_insertion_sort import binary_insertion_sort
 from utils.date import Date
+from utils.errors import ParseError, TableError
 
 
 class BTreeNodeKey:
@@ -103,6 +104,8 @@ class BTreeNodeKey:
             offset += length
 
             key = value_bytes.decode().strip("\x00")  # TODO - recreate .strip()
+        else:
+            raise TableError("Unsupported key type")
 
         real_pointer = struct.unpack_from("q", key_data[offset: offset + 8])[0]
         offset += 8
@@ -323,7 +326,7 @@ class BTree:
     def insert(self, key, pointer: int):
         root_node = self.root
 
-        existing_key_info = self.search(key)
+        existing_key_info = self._search(self.manager.root_offset, key)
 
         # If key already exists, we just add the new pointer
         if existing_key_info:
@@ -646,7 +649,7 @@ class BTree:
             self.manager.update_header()
 
     def delete_pointer(self, key, pointer: int):
-        searched_node_info = self.search(key)
+        searched_node_info = self._search(self.manager.root_offset, key)
         if searched_node_info is None:
             return
 
@@ -698,3 +701,43 @@ class BTree:
 
     def range_search(self, lower, upper):
         yield from self._range_search_node(self.manager.root_offset, lower, upper)
+
+    def _in_order_traversal(self, offset: int):
+        """
+            Perform in-order traversal of the B-Tree.
+            Yields (key, row) pairs in ascending order.
+        """
+        node = self._load_node(offset)
+        if node.is_leaf:
+            for i in range(len(node.keys)):
+                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+        else:
+            for i in range(len(node.keys)):
+                yield from self._in_order_traversal(node.children[i])
+                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+            yield from self._in_order_traversal(node.children[-1])
+
+    def _reverse_in_order_traversal(self, offset: int):
+        """
+            Perform reverse in-order traversal of the B-Tree.
+            Yields (key, row) pairs in descending order.
+        """
+        node = self._load_node(offset)
+        if node.is_leaf:
+            for i in range(len(node.keys) - 1, -1, -1):
+                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+        else:
+            for i in range(len(node.keys) - 1, -1, -1):
+                yield from self._reverse_in_order_traversal(node.children[i + 1])
+                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+            yield from self._reverse_in_order_traversal(node.children[0])
+
+    def order_btree(self, order='ASC'):
+        root_offset = self.manager.root_offset
+
+        if order == 'ASC':
+            yield from self._in_order_traversal(root_offset)
+        elif order == 'DESC':
+            yield from self._reverse_in_order_traversal(root_offset)
+        else:
+            raise ParseError(f"Order '{order}' is not supported.'")

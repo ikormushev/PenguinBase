@@ -1,5 +1,8 @@
 import struct
 
+from utils.errors import TableError
+from utils.extra import polynomial_rolling_hash
+
 
 class PointerListManager:
     def __init__(self, file_path):
@@ -7,43 +10,80 @@ class PointerListManager:
 
         with open(self.file_path, "rb+") as file:
             file.seek(0)
+            stored_hash_bytes = file.read(4)  # -> struct.calcsize("I") == 4
+            if len(stored_hash_bytes) != 4:
+                raise TableError("Corrupted file: PointerList header mismatch")
+            stored_hash_val = struct.unpack("I", stored_hash_bytes)[0]
+
             header_bytes = file.read(struct.calcsize("qq"))
+            if len(header_bytes) != struct.calcsize("qq"):
+                raise TableError("Corrupted file: PointerList header mismatch")
+
+            computed_hash_val = polynomial_rolling_hash(header_bytes)
+            if computed_hash_val != stored_hash_val:
+                raise TableError("Corrupted file: PointerList header mismatch")
+
             self.free_slot, self.eof = struct.unpack("qq", header_bytes)
 
     @staticmethod
     def create_pointer_list_manager(file_path):
+        header_bytes = struct.calcsize("qq")
+        header_data = struct.pack("qq", header_bytes + 4, header_bytes + 4)   # -> struct.calcsize("I") == 4
+        header_hash_val = polynomial_rolling_hash(header_data)
+        header_hash_bytes = struct.pack("I", header_hash_val)
+
         with open(file_path, "w+b") as file:
             file.seek(0)
-            header_bytes = struct.calcsize("qq")
-            header_data = struct.pack("qq", header_bytes, header_bytes)
+            file.write(header_hash_bytes)
             file.write(header_data)
             file.flush()
 
         return PointerListManager(file_path)
 
     def update_header(self):
+        header_data = struct.pack("qq", self.free_slot, self.eof)
+        header_hash_val = polynomial_rolling_hash(header_data)
+        header_hash_bytes = struct.pack("I", header_hash_val)
+
         with open(self.file_path, "rb+") as file:
-            header_data = struct.pack("qq", self.free_slot, self.eof)
             file.seek(0)
+            file.write(header_hash_bytes)
             file.write(header_data)
             file.flush()
 
     def write_pointer(self, position: int, pointer_data: bytes):
+        pointer_hash_val = polynomial_rolling_hash(pointer_data)
+        pointer_hash_bytes = struct.pack("I", pointer_hash_val)
+
         with open(self.file_path, "rb+") as file:
             file.seek(position)
+            file.write(pointer_hash_bytes)
             file.write(pointer_data)
             file.flush()
 
-    def read_pointer(self, position: int):
+    def read_pointer(self, position: int) -> bytes:
         with open(self.file_path, "rb") as file:
             file.seek(position)
+            stored_hash_bytes = file.read(4)  # -> struct.calcsize("I") == 4
+            if len(stored_hash_bytes) != 4:
+                raise TableError(f"Corrupted file: PointerList cannot load pointer at position {position}")
+            stored_hash_val = struct.unpack("I", stored_hash_bytes)[0]
+
             pointer_data_size = struct.calcsize("qqq")
             pointer_data = file.read(pointer_data_size)
+            if len(pointer_data) != pointer_data_size:
+                raise TableError(f"Corrupted file: PointerList cannot load pointer at position {position}")
+
+            computed_hash_val = polynomial_rolling_hash(pointer_data)
+
+            if computed_hash_val != stored_hash_val:
+                raise TableError(f"Corrupted file: PointerList cannot load pointer at position {position}")
+
             return pointer_data
 
     def allocate_space(self, position: int):
         if position == self.eof:
-            self.eof += struct.calcsize("qqq")
+            self.eof += struct.calcsize("qqq") + 4  # -> struct.calcsize("I") == 4
             self.free_slot = self.eof
         else:
             self.free_slot = self.eof
@@ -74,7 +114,8 @@ class PointerListManager:
                 prev_node = struct.pack("qqq", prev, current, next_position)
                 self.write_pointer(curr_position, prev_node)
 
-                self.allocate_space(curr_position)
+                self.allocate_space(next_position)
+                break
 
             curr_position = next_ptr
 

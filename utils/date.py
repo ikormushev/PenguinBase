@@ -78,3 +78,6 @@ class Date:
 
     def __le__(self, other):
         return self == other or self < other
+
+    def __len__(self):
+        return len(str(self))

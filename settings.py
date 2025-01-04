@@ -9,7 +9,7 @@ AVAILABLE_QUERIES = [
     "INSERT INTO <table_name> (col1, col2, ...) VALUES (val1, val2, ...), ...;",
     "GET ROW row_number_1, row_number_2, ... FROM <table_name>;",
     "DELETE FROM <table_name> ROW row_number_1, row_number_2, ...;",
-    "DELETE FROM <table_name> WHERE <expression>;"
+    "DELETE FROM <table_name> WHERE <expression>;",
     "SELECT [DISTINCT] [col1, col2, ...] FROM <table_name> [WHERE <expr>] [ORDER BY ...];",
     "CREATE INDEX <index_name> ON <table_name> (column_name);",
     "DROP INDEX <index_name> ON <table_name>;",

@@ -94,6 +94,9 @@ class HashTable:
                 yield current.key
                 current = current.next
 
+    def __len__(self):
+        return len([x for x in self.items()])
+
     def __repr__(self):
         items = [f"{key}: {value}" for key, value in self.items()]
         return "{" + ', '.join(items) + "}"

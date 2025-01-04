@@ -9,3 +9,4 @@ __pycache__/
 
 # Database Data Files
 pbdb_files/
+tests/

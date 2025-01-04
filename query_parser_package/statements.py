@@ -130,12 +130,12 @@ class DeleteWhereStatement(Statement):
 
 class SelectStatement(Statement):
     def __init__(self, columns: List[str], table_name: str, distinct: bool = False,
-                 where_expr: ExpressionNode | None = None, order_by: List[OrderByItem] | None = None):
+                 where_expr: ExpressionNode | None = None, order_by: OrderByItem | None = None):
         self.columns = columns
         self.table_name = table_name
         self.distinct = distinct
         self.where_expr = where_expr
-        self.order_by = order_by or []
+        self.order_by = order_by
 
     def __repr__(self):
         return (f"SELECT {'DISTINCT' if self.distinct else ''} {self.columns} "
@@ -145,15 +145,30 @@ class SelectStatement(Statement):
         table = Table(self.table_name)
 
         if len(self.columns) == 1 and self.columns[0] == "*":
-            columns_to_show = [col for col in table.metadata.columns.items()]
+            columns_to_show = HashTable([(col_name, col) for col_name, col in table.metadata.columns.items()])
         else:
-            columns_to_show = [col for _, col in table.metadata.columns.items() if col.column_name in self.columns]
+            invalid_columns = [col_name for col_name in self.columns if table.metadata.columns.search(col_name) is None]
+            if invalid_columns:
+                raise ParseError(f"Invalid column names: {', '.join(invalid_columns)}")
+
+            columns_to_show = HashTable([(col_name, col) for col_name, col in table.metadata.columns.items()
+                                         if col_name in self.columns])
 
         if len(columns_to_show) == 0:
-            raise ParseError("No valid columns to show!")
+            raise ParseError("No columns to show!")
 
+        if self.order_by:
+            order_by_column_name = self.order_by.column_name
+
+            if columns_to_show.search(order_by_column_name) is None:
+                raise ParseError("Invalid ORDER BY column!")
+
+        table_selected_rows_generator = table.select_rows(columns=columns_to_show,
+                                                          where_expr=self.where_expr,
+                                                          distinct=self.distinct,
+                                                          order_by=self.order_by)
         # TODO - redo the print logic
-        for row in table.filter(columns_to_show, self.where_expr):
+        for row in table_selected_rows_generator:
             print(row)
 
 

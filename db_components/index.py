@@ -47,7 +47,7 @@ class TableIndex:
         default_ranges = []
 
         column_type = column.column_type
-        if column_type == "string":
+        if column_type == "string":  # TODO - Can string be compared in ranges?
             default_ranges = [" ", "~" * column.MAX_SIZE]
         elif column_type == "number":
             default_ranges = [-float("inf"), float("inf")]

@@ -32,7 +32,8 @@ class CreateTableStatement(Statement):
             new_column = column.extract_column()
             columns[new_column.column_name] = new_column
         Table.create_table(self.table_name, columns)
-        return HashTable([("message", f"Successfully created table with name: {self.table_name}")])
+        return HashTable([("message", f"Successfully created table with name: {self.table_name}"),
+                          ("table_action", True)])
 
 
 class DropTableStatement(Statement):
@@ -45,7 +46,8 @@ class DropTableStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.drop_table()
-        return HashTable([("message", f"Successfully dropped table with name: {self.table_name}")])
+        return HashTable([("message", f"Successfully dropped table with name: {self.table_name}"),
+                          ("table_action", True)])
 
 
 class TableInfoStatement(Statement):

@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 
 from data_structures.hash_table import HashTable
 from utils.date import Date
-from utils.errors import ParseError
 from utils.string_utils import custom_strip
 
 

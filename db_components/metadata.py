@@ -41,13 +41,11 @@ class Metadata:
         for _, ind in self.indexes.items():
             metadata_content.append(f"\n{ind}")
 
-        metadata_str = "".join(metadata_content)
+        metadata_str = f"Total Lines:{len(metadata_content) + 2}\n" + "".join(metadata_content)
         metadata_hash = polynomial_rolling_hash(metadata_str.encode())
 
-        # TODO - Hash before everything
         try:
             with open(self.metadata_file_path, "w") as f:
-                f.write(f"Total Lines:{len(metadata_content)}\n")
                 f.write(f"Hash:{metadata_hash}\n")
                 f.write(metadata_str)
         except Exception as e:
@@ -60,21 +58,21 @@ class Metadata:
         with open(metadata_file) as f:
             lines = f.readlines()
 
-        if len(lines) < 2:
+        if len(lines) < 1:
             raise TableError("Table metadata file does not have the correct number of lines")
 
         curr_index = 0
-        total_lines = int(custom_split(lines[curr_index], ":")[1][:-1])
-        if len(lines) != total_lines + 2:
-            raise TableError("Table metadata file does not have the correct number of lines")
-        curr_index += 1
-
         table_hash_number = int(custom_split(lines[curr_index], ":")[1][:-1])
         curr_index += 1
         metadata_str = "".join(lines[curr_index:])
         metadata_hash = polynomial_rolling_hash(metadata_str.encode())
         if table_hash_number != metadata_hash:
             raise TableError("Table metadata hash does not match")
+
+        total_lines = int(custom_split(lines[curr_index], ":")[1][:-1])
+        if len(lines) != total_lines:
+            raise TableError("Table metadata file does not have the correct number of lines")
+        curr_index += 1
 
         table_name = custom_split(lines[curr_index][:-1], ":")[1]
         curr_index += 1

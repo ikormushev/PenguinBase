@@ -88,8 +88,6 @@ class Table:
 
         open(data_file_path, "w").close()
 
-        # TODO - return Table(directory, table_name) ?
-
     def serialize_table_row(self, node: TableNode) -> bytes:
         row_bytes = b""
 
@@ -205,7 +203,6 @@ class Table:
                 else:
                     raise TableError(f"Column '{col.column_name}' required!")
 
-            # TODO - catch the ValueError and throw a TableError?
             converted_value = col.convert_from_string_to_column_value(value)
             col.validate_column_value_size(converted_value)
 
@@ -250,7 +247,7 @@ class Table:
         self.save_table_node(new_node)
         self._add_row_to_indexes(new_node)
         self.metadata.rows_count += 1
-        self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
+        self.metadata.save_metadata()
 
     def get_rows(self, row_numbers: List[int]):
         rows_queue = DynamicQueue.from_list_sorted(row_numbers)
@@ -325,16 +322,6 @@ class Table:
             current_offset = node.next_position
             current_row += 1
 
-        # self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
-
-        # TODO - add automatic degragmentation
-        # if self.metadata.rows_count > 0:
-        #     fragmentation_percentage = (len(self.metadata.free_slots)
-        #                                 / self.metadata.rows_count) * 100
-        #     if fragmentation_percentage >= 20 and self.metadata.rows_count > 1000:
-        #         print("File is mostly fragmented")
-        #         self.defragment()
-
     def defragment(self):
         temp_file_path = self.data_file_path + ".temp"
         open(temp_file_path, "wb+").close()
@@ -380,7 +367,7 @@ class Table:
 
         self._recreate_index_tree()
 
-        self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
+        self.metadata.save_metadata()
 
     def drop_table(self):
         if (not os.path.join(PBDB_FILES_PATH, self.table_name)
@@ -452,14 +439,14 @@ class Table:
         self._create_index_tree(new_index)
 
         self.metadata.indexes[column_name] = new_index
-        self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
+        self.metadata.save_metadata()
 
     def drop_index(self, index_name: str):
         for col, index in self.metadata.indexes.items():
             if index.index_name == index_name:
                 index.delete_index()
                 self.metadata.indexes.delete(col)
-                self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
+                self.metadata.save_metadata()
                 return
 
         raise TableError(f"Index '{index_name}' does not exist!")
@@ -602,17 +589,7 @@ class Table:
                     return None
 
                 return self._execute_index_plan(plan)
-        elif isinstance(where_expr, NotNode):
-            return None
-
-            # TODO - create the NotNode expression
-            # sub_offsets = self._evaluate_expression_for_index(where_expr.expr)
-            # if sub_offsets is None:
-            #     return None
-            #
-            # return _difference_offsets()
-        else:
-            return None
+        return None
 
     def filter(self, columns: HashTable, where_expr):
         if where_expr is not None:
@@ -654,7 +631,6 @@ class Table:
         #  There is even a patent for that...
 
         self._full_scan_delete(where_expr)
-        # self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
 
     def select_rows(self, columns: HashTable, where_expr, distinct: bool, order_by):
         filtered_rows = self.filter(columns, where_expr)

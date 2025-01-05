@@ -83,7 +83,7 @@ class QueryTokenizer:
             if self.current_char == '.':
                 if has_decimal_point:
                     result.append(self.current_char)
-                    return Token(TokenType.UNKNOWN, ''.join(result))  # TODO - raise an error?
+                    return Token(TokenType.UNKNOWN, ''.join(result))
                 has_decimal_point = True
 
             result.append(self.current_char)
@@ -118,11 +118,9 @@ class QueryTokenizer:
         if not self.current_char:
             return Token(TokenType.EOF, '')
 
-        # Check for string or date (single/double quotes)
         if self.current_char in ['"', "'"]:
             return self.collect_string_or_date(self.current_char)
 
-        # Operators and punctuation
         if self.current_char == ',':
             self.advance()
             return Token(TokenType.COMMA, ',')
@@ -139,7 +137,6 @@ class QueryTokenizer:
             self.advance()
             return Token(TokenType.SECOL, ';')
 
-        # Operators: <=, >=, !=, <, >, =
         if self.current_char == '<':
             if self.peek() == '=':
                 self.advance()
@@ -163,16 +160,17 @@ class QueryTokenizer:
             return Token(TokenType.EQ, '=')
 
         if self.current_char == '!':
-            if self.peek() == '=':  # TODO - raise an error if there is no '='?
+            if self.peek() == '=':
                 self.advance()
                 self.advance()
                 return Token(TokenType.NEQ, '!=')
+            else:
+                self.advance()
+                return Token(TokenType.UNKNOWN, self.current_char)
 
-        # Number or Float
         if custom_isdigit(self.current_char) or self.current_char == "-":
             return self.collect_number()
 
-        # Identifier or keyword
         if custom_isalpha(self.current_char) or self.current_char == '_':
             return self.collect_identifier_or_keyword()
 
@@ -188,4 +186,3 @@ class QueryTokenizer:
             if token.token_type == TokenType.EOF:
                 break
         return tokens
-

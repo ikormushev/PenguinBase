@@ -38,7 +38,7 @@ class BTreeNodeKey:
 
         k_size = 1
         if key_type == "N" or key_type == "I" or key_type == "F":
-            k_size += 8  # TODO - Later can be changed for different numbers
+            k_size += 8
         elif key_type == "D":
             k_size += struct.calcsize("10s")
         elif key_type == "S":
@@ -86,7 +86,6 @@ class BTreeNodeKey:
         offset += 1
         key_max_size = None
 
-        # TODO - try, except for ValueErrors?
         if key_type == b"I":
             key = int(struct.unpack("q", key_data[offset:offset + 8])[0])
             offset += 8
@@ -455,9 +454,9 @@ class BTree:
             if len(child_node.keys) < self.t:
                 self._fix_child(node, idx)
 
-                self._save_node(node)  # TODO - just in case
+                self._save_node(node)  # just in case
                 if idx >= len(node.children):
-                    idx -= 1  # TODO - fixes a bug where multiple deletes mess up the BTree
+                    idx -= 1  # fixes a bug where multiple deletes mess up the BTree
                 child_node = self._load_node(node.children[idx])
 
             self._delete_from_node(child_node, key)
@@ -481,7 +480,7 @@ class BTree:
             self._save_node(node)
 
             self._delete_from_node(left_child, pred.key)
-            self._save_node(left_child) # TODO - probably not needed
+            self._save_node(left_child)  # probably not needed
         elif len(right_child.keys) >= self.t:
             # Case 2.2: Use the successor - the smallest key on the right child
             succ = self._get_successor(node, index)
@@ -489,7 +488,7 @@ class BTree:
             self._save_node(node)
 
             self._delete_from_node(right_child, succ.key)
-            self._save_node(right_child) # TODO - probably not needed
+            self._save_node(right_child)  # probably not needed
         else:
             # Case 2.3: Merge the two children and delete
             self._merge(node, index)

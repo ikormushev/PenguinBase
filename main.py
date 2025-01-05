@@ -34,8 +34,16 @@ def list_table_info(table_info: HashTable):
             print(f"\t{stat}: {value}")
 
 
-print("Available commands:\nq - query the database\nl - list the possible queries\ne - exit")
-print("-----------------------")
+def list_commands():
+    print("-----------------------")
+    print("Available commands:\n"
+          "q - query the database\n"
+          "l - list the possible queries\n"
+          "c - list the available commands\n"
+          "e - exit")
+    print("-----------------------")
+
+list_commands()
 
 while True:
     command = input("> ")
@@ -49,10 +57,20 @@ while True:
         try:
             parsed_query = parser.parse()
             result = parsed_query.execute_statement()
-            if result["rows"] is not None and result["columns"] is not None:
+            rows = result["rows"]
+            columns = result["columns"]
+
+            if rows is not None and columns is not None:
+                curr_row_count = 0
                 rows = result["rows"]
+                cols = ["Row Number"] + [col_name for col_name, col in columns.items()]
+                print("  |  ".join(cols))
+
                 for row in rows:
-                    print(row)
+                    curr_row_count += 1
+                    print(f"  {curr_row_count}  |  ", end="")
+                    spread_row_value = [str(value) for _, value in row.items()]
+                    print("  |  ".join(spread_row_value))
                 continue
 
             if result["tableinfo"] is not None:
@@ -70,6 +88,8 @@ while True:
             print(f"General Error: {e}")
     elif command == "l":
         list_queries()
+    elif command == "c":
+        list_commands()
     elif command == "e":
         break
     else:

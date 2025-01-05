@@ -20,7 +20,7 @@ class TableIndex:
 
         key_max_value = 0
         if column.column_type == "string":
-            key_max_value = column.max_value
+            key_max_value = column.MAX_SIZE
 
         btree = BTree.create_tree(t=3,
                                   key_type=key_types[column.column_type],

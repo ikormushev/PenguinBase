@@ -48,7 +48,6 @@ class TokenType:
     # Constraints
     DEFAULT = 'DEFAULT'
     MAX_SIZE = 'MAX_SIZE'
-    PRIMARY_KEY = 'PRIMARY_KEY'
 
     # Catch-all unknown
     UNKNOWN = 'UNKNOWN'

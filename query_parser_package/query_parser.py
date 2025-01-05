@@ -36,9 +36,6 @@ class QueryParser:
         raise ParseError(message)
 
     def match(self, token_type):
-        """
-            Check if the current token matches the given type, then advance. If not, raise error.
-        """
         if self.current_token.token_type == token_type:
             self.advance()
         else:
@@ -75,7 +72,7 @@ class QueryParser:
             self.match(TokenType.SECOL)
 
             if not self.reached_end:
-                self.error("Invalid statement")
+                self.error("Statement must end with a semicolon (;)")
             return result
 
         return wrapper
@@ -114,7 +111,7 @@ class QueryParser:
 
             constraints = HashTable()
 
-            while self.current_token.token_type in [TokenType.DEFAULT, TokenType.PRIMARY_KEY, TokenType.MAX_SIZE]:
+            while self.current_token.token_type in [TokenType.DEFAULT, TokenType.MAX_SIZE]:
                 constraint_name = self.current_token.value
                 self.match(self.current_token.token_type)
 
@@ -135,7 +132,8 @@ class QueryParser:
 
                 constraints[constraint_name] = constraint_value
 
-                if self.current_token.token_type == TokenType.COMMA or self.current_token.token_type == TokenType.RPAREN:
+                if (self.current_token.token_type == TokenType.COMMA
+                        or self.current_token.token_type == TokenType.RPAREN):
                     break
 
             col_def = ColumnDef(
@@ -159,6 +157,7 @@ class QueryParser:
 
     def parse_create_index(self):
         self.match(TokenType.INDEX)
+
         index_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
 
@@ -190,12 +189,14 @@ class QueryParser:
 
     def parse_drop_table(self):
         self.match(TokenType.TABLE)
+
         table_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
         return st.DropTableStatement(table_name=table_name_token.value)
 
     def parse_drop_index(self):
         self.match(TokenType.INDEX)
+
         index_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
 
@@ -208,6 +209,7 @@ class QueryParser:
     @check_end_decorator
     def parse_tableinfo(self):
         self.match(TokenType.TABLEINFO)
+
         table_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
         return st.TableInfoStatement(table_name=table_name_token.value)
@@ -216,6 +218,7 @@ class QueryParser:
     def parse_insert(self):
         self.match(TokenType.INSERT)
         self.match(TokenType.INTO)
+
         table_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
 
@@ -294,14 +297,26 @@ class QueryParser:
     def parse_get(self):
         self.match(TokenType.GET)
         self.match(TokenType.ROW)
+
         row_numbers = []
-        while self.current_token.token_type == TokenType.NUMBER:
-            row_numbers.append(int(self.current_token.value))
+
+        while self.current_token.token_type == TokenType.NUMBER or self.current_token.token_type == TokenType.FLOAT:
+            if self.current_token.token_type == TokenType.FLOAT:
+                self.error("Expected a positive integer for row number!")
+
+            curr_number = int(self.current_token.value)
+            if curr_number <= 0:
+                self.error("Expected a positive integer for row number!")
+
+            row_numbers.append(curr_number)
             self.advance()
             if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
             else:
                 break
+
+        if len(row_numbers) < 1:
+            self.error("Expected at least one row number to get")
 
         self.match(TokenType.FROM)
         table_name_token = self.current_token
@@ -312,6 +327,7 @@ class QueryParser:
     def parse_delete(self):
         self.match(TokenType.DELETE)
         self.match(TokenType.FROM)
+
         table_name_token = self.current_token
         self.match(TokenType.IDENTIFIER)
 
@@ -320,14 +336,21 @@ class QueryParser:
         elif self.current_token.token_type == TokenType.WHERE:
             return self.parse_delete_where(table_name_token.value)
         else:
-            self.error("Expected ROW or WHERE after DELETE FROM <table_name>")
+            self.error(f"Expected ROW or WHERE after DELETE FROM {table_name_token.value}")
 
     def parse_delete_row(self, table_name):
         self.match(TokenType.ROW)
 
         row_numbers = []
-        while self.current_token.token_type == TokenType.NUMBER:
-            row_numbers.append(int(self.current_token.value))
+        while self.current_token.token_type == TokenType.NUMBER or self.current_token.token_type == TokenType.FLOAT:
+            if self.current_token.token_type == TokenType.FLOAT:
+                self.error("Expected a positive integer for row number!")
+
+            curr_number = int(self.current_token.value)
+            if curr_number <= 0:
+                self.error("Expected a positive integer for row number!")
+
+            row_numbers.append(curr_number)
             self.advance()
             if self.current_token.token_type == TokenType.COMMA:
                 self.advance()
@@ -335,7 +358,7 @@ class QueryParser:
                 break
 
         if len(row_numbers) < 1:
-            self.error("No rows given to delete")
+            self.error("Expected at least one row number to delete")
 
         return st.DeleteRowStatement(table_name=table_name, row_numbers=row_numbers)
 
@@ -373,7 +396,7 @@ class QueryParser:
         where_expr = None
         if self.current_token.token_type == TokenType.WHERE:
             self.advance()
-            where_expr = self.parse_condition_ast()   # ExpressionNode
+            where_expr = self.parse_condition_ast()  # ExpressionNode
 
         order_by = None
 
@@ -388,7 +411,7 @@ class QueryParser:
                     direction = self.current_token.value
                     self.advance()
                 else:
-                    self.error("Direction can be either ASC or DESC!")
+                    self.error("Direction can be either ASC or DESC")
             order_by = OrderByItem(col_name, direction)
 
         return st.SelectStatement(
@@ -408,7 +431,7 @@ class QueryParser:
     def parse_or_expr(self):
         node = self.parse_and_expr()
         while self.current_token.token_type == TokenType.OR:
-            operator = self.current_token.value.upper()
+            operator = self.current_token.value
             self.advance()
             right = self.parse_and_expr()
             node = BinaryOpNode(node, operator, right)
@@ -418,7 +441,7 @@ class QueryParser:
     def parse_and_expr(self):
         node = self.parse_not_expr()
         while self.current_token.token_type == TokenType.AND:
-            operator = self.current_token.value.upper()
+            operator = self.current_token.value
             self.advance()
             right = self.parse_not_expr()
             node = BinaryOpNode(node, operator, right)
@@ -444,7 +467,7 @@ class QueryParser:
     def parse_comparison(self):
         left = self.parse_value()
         if self.current_token.token_type in [TokenType.EQ, TokenType.NEQ, TokenType.LT,
-                                       TokenType.GT, TokenType.LEQ, TokenType.GEQ]:
+                                             TokenType.GT, TokenType.LEQ, TokenType.GEQ]:
             operator = self.current_token.value
             self.advance()
             right = self.parse_value()

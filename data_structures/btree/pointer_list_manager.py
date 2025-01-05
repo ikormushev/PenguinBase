@@ -158,13 +158,10 @@ class PointerListManager:
 
     def traverse_pointer_list(self, start_pointer: int):
         position = start_pointer
-        pointers = []
 
         while position != -1:
             curr_pointer_data = self.read_pointer(position)
             prev_p, curr_p, next_p = struct.unpack("qqq", curr_pointer_data)
-            pointers.append(curr_p)
+            yield curr_p
+
             position = next_p
-
-        return pointers
-

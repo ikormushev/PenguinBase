@@ -1,5 +1,6 @@
 import os
 import struct
+import sys
 from typing import List
 
 from data_structures.dynamic_queue import DynamicQueue
@@ -8,11 +9,11 @@ from db_components.freeslot import FreeSlot
 from db_components.index import TableIndex
 from db_components.merge_sort_handler import MergeSortHandler
 from db_components.metadata import Metadata
-from query_parser_package.expressions import BinaryOpNode, NotNode
+from query_parser_package.expressions import BinaryOpNode, NotNode, ValueNode
 from utils.date import Date
-from utils.errors import TableError
+from utils.errors import TableError, ParseError
 from settings import PBDB_FILES_PATH
-from utils.extra import polynomial_rolling_hash
+from utils.extra import polynomial_rolling_hash, intersect_unsorted, union_unsorted, difference_unsorted
 from utils.table_random_values_generator import generate_random_rows
 
 
@@ -52,14 +53,14 @@ class Table:
         self.metadata = Metadata.load_metadata(self.metadata_file_path)
 
     @staticmethod
-    def check_table_name(table_name: str) -> bool:
+    def check_given_name(name: str) -> bool:
 
-        if len(table_name) < 3 or len(table_name) > 64:
+        if len(name) < 3 or len(name) > 64:
             return False
 
         allowed_characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789'
 
-        for char in table_name:
+        for char in name:
             if char not in allowed_characters:
                 return False
 
@@ -67,8 +68,10 @@ class Table:
 
     @staticmethod
     def create_table(table_name: str, columns: HashTable):
-        if not Table.check_table_name(table_name):
-            raise TableError(f"Invalid table name - {table_name}!")
+        if not Table.check_given_name(table_name):
+            raise TableError(f"Invalid table name - {table_name}! "
+                             f"Size can be between 3 and 64 characters. "
+                             f"Valid characters are only a-z, A-Z, 0-9, and _")
 
         directory = os.path.join(PBDB_FILES_PATH, table_name)
         if os.path.exists(directory):
@@ -88,10 +91,9 @@ class Table:
         # TODO - return Table(directory, table_name) ?
 
     def serialize_table_row(self, node: TableNode) -> bytes:
-        metadata_columns = [col for col in self.metadata.columns.items()]
         row_bytes = b""
 
-        for column_name, column in metadata_columns:
+        for column_name, column in self.metadata.columns.items():
             row_value = node.row_data[column_name]
 
             if column.column_type == "number":
@@ -188,9 +190,7 @@ class Table:
         row_data = self.deserialize_table_row(row_data_bytes)
 
         return TableNode(row_data=row_data,
-                         position=position,
-                         previous_position=previous_position,
-                         next_position=next_position)
+                         position=position, previous_position=previous_position, next_position=next_position)
 
     def validate_row(self, row: HashTable) -> HashTable:
         metadata_columns = [col for col in self.metadata.columns.items()]
@@ -205,12 +205,9 @@ class Table:
                 else:
                     raise TableError(f"Column '{col.column_name}' required!")
 
+            # TODO - catch the ValueError and throw a TableError?
             converted_value = col.convert_from_string_to_column_value(value)
             col.validate_column_value_size(converted_value)
-
-            # TODO - check for PK uniquness
-            # if col.is_primary_key:
-            #     check_primary_key(col, value)
 
             row[col.column_name] = converted_value
 
@@ -227,7 +224,7 @@ class Table:
         for slot in self.metadata.free_slots:
             if node_size <= slot.slot_length:
                 position = slot.slot_position
-                self.metadata.free_slots.remove(slot)  # TODO - .remove() може ли да се използва?
+                self.metadata.free_slots.remove(slot)
                 break
 
         if position is None:
@@ -253,17 +250,17 @@ class Table:
         self.save_table_node(new_node)
         self._add_row_to_indexes(new_node)
         self.metadata.rows_count += 1
-        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
+        self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
 
     def get_rows(self, row_numbers: List[int]):
         rows_queue = DynamicQueue.from_list_sorted(row_numbers)
 
         start_rows = self.metadata.rows_count
-        current_offset = self.metadata.first_offset
-        current_row = 1
-
         if rows_queue.length > start_rows:
             raise TableError(f"Too many rows! Table '{self.table_name}' has only {start_rows} rows!")
+
+        current_offset = self.metadata.first_offset
+        current_row = 1
 
         while current_offset != -1 and rows_queue.length > 0:
             target_row = rows_queue.peek()
@@ -296,7 +293,8 @@ class Table:
         self._delete_row_from_indexes(node)
 
         node_size = len(self.serialize_table_node(node))
-        self.metadata.free_slots.append(FreeSlot(node.position, node_size))
+        free_slot = FreeSlot(node.position, node_size)
+        self.metadata.free_slots.append(free_slot)
 
         self.metadata.rows_count -= 1
 
@@ -304,11 +302,11 @@ class Table:
         rows_queue = DynamicQueue.from_list_sorted(row_numbers)
 
         start_rows = self.metadata.rows_count
-        current_offset = self.metadata.first_offset
-        current_row = 1
-
         if rows_queue.length > start_rows:
             raise TableError(f"Too many rows! Table '{self.table_name}' has only {start_rows} rows!")
+
+        current_offset = self.metadata.first_offset
+        current_row = 1
 
         while current_offset != -1 and rows_queue.length > 0:
             target_row = rows_queue.peek()
@@ -317,18 +315,23 @@ class Table:
             node = self.load_table_node(current_offset)
 
             if current_row == target_row:
-                self._delete(node)
+                try:
+                    self._delete(node)
+                    self.metadata.save_metadata()
+                except Exception as e:
+                    raise TableError(f"Error occurred with deleting row at {node.position} with values: {node.row_data}")
                 rows_queue.dequeue()
 
             current_offset = node.next_position
             current_row += 1
 
-        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
+        # self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
 
+        # TODO - add automatic degragmentation
         # if self.metadata.rows_count > 0:
         #     fragmentation_percentage = (len(self.metadata.free_slots)
         #                                 / self.metadata.rows_count) * 100
-        #     if fragmentation_percentage >= 20:
+        #     if fragmentation_percentage >= 20 and self.metadata.rows_count > 1000:
         #         print("File is mostly fragmented")
         #         self.defragment()
 
@@ -377,11 +380,13 @@ class Table:
 
         self._recreate_index_tree()
 
-        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
+        self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
 
     def drop_table(self):
-        if not os.path.join(PBDB_FILES_PATH, self.table_name) or not os.path.exists(self.data_file_path) or not os.path.exists(self.metadata_file_path):
-            raise TableError("Table files are missing!")
+        if (not os.path.join(PBDB_FILES_PATH, self.table_name)
+                or not os.path.exists(self.data_file_path)
+                or not os.path.exists(self.metadata_file_path)):
+            raise TableError(f"Table {self.table_name} files are missing")
 
         for _, index in self.metadata.indexes.items():
             index.delete_index()
@@ -392,15 +397,15 @@ class Table:
         try:
             os.rmdir(self.directory)
         except Exception as e:
-            raise TableError(f"Failed to remove directory {self.directory}.")
+            raise TableError(f"Failed to remove directory {self.directory}: {e}")
 
     def _add_row_to_indexes(self, node: TableNode):
-        for col, index in self.metadata.indexes.items():
-            index.add_element_to_index(node.row_data[col], node.position)
+        for col_name, index in self.metadata.indexes.items():
+            index.add_element_to_index(node.row_data[col_name], node.position)
 
     def _delete_row_from_indexes(self, node: TableNode):
-        for col, index in self.metadata.indexes.items():
-            index.remove_element_from_index(node.row_data[col], node.position)
+        for col_name, index in self.metadata.indexes.items():
+            index.remove_element_from_index(node.row_data[col_name], node.position)
 
     def _recreate_index_tree(self):
         for _, index in self.metadata.indexes.items():
@@ -417,20 +422,28 @@ class Table:
 
         while current_offset != -1:
             node = self.load_table_node(current_offset)
-            current_offset = node.next_position
+
             column_key = node.row_data[index_column.column_name]
             index.add_element_to_index(column_key, node.position)
 
+            current_offset = node.next_position
+
     def create_new_index(self, index_name: str, column_name: str):
         column = self.metadata.columns[column_name]
+
         if column is None:
-            raise TableError(f"Column '{column_name}' does not exist!")
+            raise ParseError(f"Column '{column_name}' does not exist!")
 
         if self.metadata.indexes.search(column_name) is not None:
             raise TableError(f"Column '{column_name}' already has an index!")
 
-        index_path = os.path.join(self.directory, f"{index_name}.index")
-        index_extra_data = os.path.join(self.directory, f"{index_name}.data")
+        if not Table.check_given_name(index_name):
+            raise TableError(f"Invalid index name - {index_name}! "
+                             f"Size can be between 3 and 64 characters. "
+                             f"Valid characters are only a-z, A-Z, 0-9, and _")
+
+        index_path = os.path.join(self.directory, f"{index_name}_index.index")
+        index_extra_data = os.path.join(self.directory, f"{index_name}_index.data")
 
         new_index = TableIndex.create_index(index_name=index_name,
                                             column=column,
@@ -438,14 +451,15 @@ class Table:
                                             pointer_list_path=index_extra_data)
         self._create_index_tree(new_index)
 
-        self.metadata.indexes.insert(column_name, new_index)
-        self.metadata.save_metadata()  # TODO - fix when automatic save of the Table is implemented
+        self.metadata.indexes[column_name] = new_index
+        self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
 
     def drop_index(self, index_name: str):
         for col, index in self.metadata.indexes.items():
             if index.index_name == index_name:
                 index.delete_index()
                 self.metadata.indexes.delete(col)
+                self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
                 return
 
         raise TableError(f"Index '{index_name}' does not exist!")
@@ -467,7 +481,7 @@ class Table:
             self.insert(row)
 
     def insert_random(self, columns_names: List[str], count: int):
-        table_columns_names = [col.column_name for _, col in self.metadata.columns.items()]
+        table_columns_names = [column_name for column_name, _ in self.metadata.columns.items()]
         extracted_columns = []
         for col_name in columns_names:
             if col_name not in table_columns_names:
@@ -495,24 +509,152 @@ class Table:
                 yield node.filter_row(columns)
             current_offset = node.next_position
 
+    def _parse_index_plan(self, bin_expr):
+        def flip_operator(op):
+            if op == "<":
+                return ">"
+            if op == "<=":
+                return ">="
+            if op == ">":
+                return "<"
+            if op == ">=":
+                return "<="
+            return op
+
+        if not (isinstance(bin_expr.left, ValueNode) and isinstance(bin_expr.right, ValueNode)):
+            return None
+
+        op = bin_expr.operator
+        left = bin_expr.left
+        right = bin_expr.right
+        if op not in ["=", "!=", "<", "<=", ">", ">="]:
+            return None
+
+        if left.is_column and not right.is_column:
+            col_name = left.value
+            constant_val = right.value
+        elif right.is_column and not left.is_column:
+            col_name = right.value
+            constant_val = left.value
+            op = flip_operator(op)
+        else:
+            return None
+
+        if self.metadata.indexes.search(col_name) is None:
+            return None
+
+        column = self.metadata.columns[col_name]
+        try:
+            column.validate_value_type(constant_val)
+        except ValueError as e:
+            raise ParseError(f"Query error: {e}")
+
+        return HashTable([("col", col_name), ("op", op), ("value", constant_val)])
+
+    def _execute_index_plan(self, plan):
+        col = plan["col"]
+        op = plan["op"]
+        val = plan["value"]
+        index = self.metadata.indexes[col]
+        column = self.metadata.columns[col]
+
+        if op == "=":
+            return index.search(val)
+        elif op == "<":
+            return index.range_search(column, end=val)
+        elif op == "<=":
+            return index.range_search(column, end=val)
+        elif op == ">":
+            return index.range_search(column, start=val)
+        elif op == ">=":
+            return index.range_search(column, start=val)
+        elif op == "!=":
+            matched = index.search(val)
+            all_val = index.range_search(column)
+
+            return difference_unsorted(all_val, matched)
+
+        return None
+
+    def _evaluate_expression_for_index(self, where_expr):
+        if isinstance(where_expr, BinaryOpNode):
+            op_up = where_expr.operator
+            if op_up == "AND":
+                left_offsets = self._evaluate_expression_for_index(where_expr.left)
+                right_offsets = self._evaluate_expression_for_index(where_expr.right)
+
+                if left_offsets is None or right_offsets is None:
+                    return None
+
+                return intersect_unsorted(left_offsets, right_offsets)
+            elif op_up == "OR":
+                left_offsets = self._evaluate_expression_for_index(where_expr.left)
+                right_offsets = self._evaluate_expression_for_index(where_expr.right)
+
+                if left_offsets is None or right_offsets is None:
+                    return None
+
+                return union_unsorted(left_offsets, right_offsets)
+            else:
+                plan = self._parse_index_plan(where_expr)
+
+                if plan is None:
+                    return None
+
+                return self._execute_index_plan(plan)
+        elif isinstance(where_expr, NotNode):
+            return None
+
+            # TODO - create the NotNode expression
+            # sub_offsets = self._evaluate_expression_for_index(where_expr.expr)
+            # if sub_offsets is None:
+            #     return None
+            #
+            # return _difference_offsets()
+        else:
+            return None
+
     def filter(self, columns: HashTable, where_expr):
+        if where_expr is not None:
+            offsets_gen = self._evaluate_expression_for_index(where_expr)
+            if offsets_gen is not None:
+                for offset in offsets_gen:
+                    node = self.load_table_node(offset)
+                    row = node.row_data
+
+                    if where_expr.evaluate_expression(row):
+                        yield node.filter_row(columns)
+                return
+
         if where_expr is None:
             yield from self._full_scan(columns)
         else:
             yield from self._full_scan_and_filter(columns, where_expr)
 
-    def _delete_no_index(self, where_expr):
+    def _full_scan_delete(self, where_expr):
         current_offset = self.metadata.first_offset
         while current_offset != -1:
             node = self.load_table_node(current_offset)
             row = node.row_data
+
             if where_expr.evaluate_expression(row):
-                self._delete(node)
+                try:
+                    self._delete(node)
+                    self.metadata.save_metadata()
+                except Exception as e:
+                    raise TableError(f"Error occurred with deleting row at {node.position} with values: {row}")
             current_offset = node.next_position
 
     def delete_filtered(self, where_expr):
-        self._delete_no_index(where_expr)
-        self.metadata.save_metadata()
+        if where_expr is None:
+            raise ParseError("Delete WHERE clause empty")
+
+        #  Waaayy too overhead to delete using an index:
+        #  BTree is used to delete, while also elements are being deleted from it which causes restructuring...
+        #  There is even a patent for that...
+
+        self._full_scan_delete(where_expr)
+        # self.metadata.save_metadata()  # TODO - Try/Catch block for saving the metadata?
 
     def select_rows(self, columns: HashTable, where_expr, distinct: bool, order_by):
         filtered_rows = self.filter(columns, where_expr)
@@ -531,6 +673,9 @@ class Table:
                                               order_by_col=order_by_col, order=order)
 
         merged_rows_path = merge_sort_handler.select_merge_sort(filtered_rows)
+
+        if not os.path.exists(merged_rows_path):
+            raise TableError(f"MergeSort path '{merged_rows_path}' does not exist!")
 
         with open(merged_rows_path, "rb") as f:
             while True:

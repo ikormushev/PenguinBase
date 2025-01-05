@@ -3,6 +3,7 @@ from data_structures.btree.btree import BTree
 from data_structures.hash_table import HashTable
 from db_components.column import Column
 from utils.date import Date
+from utils.errors import TableError
 
 
 class TableIndex:
@@ -17,7 +18,6 @@ class TableIndex:
     def create_index(index_name, column, index_path, pointer_list_path):
         key_types = HashTable([("number", "N"), ("string", "S"), ("date", "D")])
 
-        # TODO - fix later
         key_max_value = 0
         if column.column_type == "string":
             key_max_value = column.max_value
@@ -37,6 +37,9 @@ class TableIndex:
         self.index_tree.delete_pointer(key, pointer)
 
     def delete_index(self):
+        if not os.path.exists(self.index_path) or not os.path.exists(self.pointer_list_data_path):
+            raise TableError(f"Index files for index {self.index_name} missing")
+
         os.remove(self.index_path)
         os.remove(self.pointer_list_data_path)
 
@@ -47,7 +50,7 @@ class TableIndex:
         default_ranges = []
 
         column_type = column.column_type
-        if column_type == "string":  # TODO - Can string be compared in ranges?
+        if column_type == "string":
             default_ranges = [" ", "~" * column.MAX_SIZE]
         elif column_type == "number":
             default_ranges = [-float("inf"), float("inf")]

@@ -1,6 +1,7 @@
 from data_structures.hash_table import HashTable
 from query_parser_package.tokens import TokenType, Token
 from utils.date import Date
+from utils.string_utils import custom_isspace, custom_isalnum, custom_isdigit, custom_isalpha
 
 
 class QueryTokenizer:
@@ -30,7 +31,6 @@ class QueryTokenizer:
                              ('ON', TokenType.ON),
                              ('DEFAULT', TokenType.DEFAULT),
                              ('MAX_SIZE', TokenType.MAX_SIZE),
-                             ('PRIMARY_KEY', TokenType.PRIMARY_KEY),
                              ('RANDOM', TokenType.RANDOM),
                              ('DEFRAGMENT', TokenType.DEFRAGMENT),
                              ])
@@ -54,22 +54,20 @@ class QueryTokenizer:
         return None
 
     def skip_whitespace(self):
-        while self.current_char and self.current_char.isspace():  # TODO - recreate .isspace()
+        while self.current_char and custom_isspace(self.current_char):
             self.advance()
 
     def collect_identifier_or_keyword(self):
         result = []
 
-        while self.current_char and (
-                self.current_char.isalnum() or self.current_char == '_'):  # TODO - recreate .isalnum()
+        while self.current_char and (custom_isalnum(self.current_char) or self.current_char == '_'):
             result.append(self.current_char)
             self.advance()
 
         value = ''.join(result)
-        upper_value = value.upper()  # TODO - recreate .upper()
 
-        if self.KEYWORD_MAP[upper_value]:
-            return Token(self.KEYWORD_MAP[upper_value], value)
+        if self.KEYWORD_MAP[value]:
+            return Token(self.KEYWORD_MAP[value], value)
         else:
             return Token(TokenType.IDENTIFIER, value)
 
@@ -77,15 +75,20 @@ class QueryTokenizer:
         result = []
         has_decimal_point = False
 
-        while self.current_char and (
-                self.current_char.isdigit() or (self.current_char == '.')):
+        if self.current_char == "-":
+            result.append("-")
+            self.advance()
+
+        while self.current_char and (custom_isdigit(self.current_char) or (self.current_char == '.')):
             if self.current_char == '.':
                 if has_decimal_point:
                     result.append(self.current_char)
                     return Token(TokenType.UNKNOWN, ''.join(result))  # TODO - raise an error?
                 has_decimal_point = True
+
             result.append(self.current_char)
             self.advance()
+
         if has_decimal_point:
             return Token(TokenType.FLOAT, ''.join(result))
         return Token(TokenType.NUMBER, ''.join(result))
@@ -93,6 +96,7 @@ class QueryTokenizer:
     def collect_string_or_date(self, quote_char):
         self.advance()
         result = []
+
         while self.current_char and self.current_char != quote_char:
             result.append(self.current_char)
             self.advance()
@@ -159,17 +163,17 @@ class QueryTokenizer:
             return Token(TokenType.EQ, '=')
 
         if self.current_char == '!':
-            if self.peek() == '=':
+            if self.peek() == '=':  # TODO - raise an error if there is no '='?
                 self.advance()
                 self.advance()
                 return Token(TokenType.NEQ, '!=')
 
         # Number or Float
-        if self.current_char.isdigit():  # TODO - recreate .isdigit()
+        if custom_isdigit(self.current_char) or self.current_char == "-":
             return self.collect_number()
 
         # Identifier or keyword
-        if self.current_char.isalpha() or self.current_char == '_':   # TODO - recreate .isalpha()
+        if custom_isalpha(self.current_char) or self.current_char == '_':
             return self.collect_identifier_or_keyword()
 
         current = self.current_char

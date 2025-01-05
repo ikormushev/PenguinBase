@@ -43,15 +43,16 @@ class BTreeNodeManager:
 
     @staticmethod
     def create_node_manager(file_path, t, key_type, key_max_size):
-        with open(file_path, "wb+") as file:
-            header_bytes_size = struct.calcsize("iqq1si")
-            header_data = struct.pack("iqq1si", t,
-                                      header_bytes_size + 4, header_bytes_size + 4,
-                                      key_type.encode(), key_max_size)
-            file.seek(0)
+        header_bytes_size = struct.calcsize("iqq1si")
+        header_data = struct.pack("iqq1si", t,
+                                  header_bytes_size + 4, header_bytes_size + 4,
+                                  key_type.encode(), key_max_size)
 
-            header_hash_val = polynomial_rolling_hash(header_data)
-            header_hash_bytes = struct.pack("I", header_hash_val)
+        header_hash_val = polynomial_rolling_hash(header_data)
+        header_hash_bytes = struct.pack("I", header_hash_val)
+
+        with open(file_path, "wb+") as file:
+            file.seek(0)
             file.write(header_hash_bytes)
             file.write(header_data)
             file.flush()

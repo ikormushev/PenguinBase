@@ -16,7 +16,7 @@ def generate_random_date():
 
 def generate_random_number():
     if random.choice([True, False]):
-        return random.randint(0, 10000)
+        return random.randint(0, 10_000)
     else:
         return random.uniform(0, 1000)
 

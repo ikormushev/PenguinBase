@@ -87,11 +87,15 @@ class MergeSortHandler:
         """
             Merge chunk_files into one final sorted file, skipping duplicates.
         """
-        file_handles = [open(cf, "rb") for cf in chunk_files]
+        file_handles = []
+        for temp_path in chunk_files:
+            if not os.path.exists(temp_path):
+                raise TableError(f"Temporary MergeSort file '{temp_path}' does not exist")
+            file_handles.append(open(temp_path, "rb"))
+
         buffers = [self.read_next_row(fh) for fh in file_handles]
 
         final_path = os.path.join(self.directory, f"{self.table_name}_merge_sort.temp")
-        open(final_path, 'wb').close()
 
         last_distinct_key = None
 
@@ -134,11 +138,15 @@ class MergeSortHandler:
         """
             Merge chunk_files into one final sorted file, NOT skipping duplicates.
         """
-        file_handles = [open(cf, "rb") for cf in chunk_files]
+        file_handles = []
+        for temp_path in chunk_files:
+            if not os.path.exists(temp_path):
+                raise TableError(f"Temporary MergeSort file '{temp_path}' does not exist")
+            file_handles.append(open(temp_path, "rb"))
+
         buffers = [self.read_next_row(fh) for fh in file_handles]
 
         final_path = os.path.join(self.directory, f"{self.table_name}_merge_sort.temp")
-        open(final_path, 'wb').close()
 
         with open(final_path, "wb") as out_f:
             while True:
@@ -262,7 +270,7 @@ class MergeSortHandler:
 
         computed_hash_val = polynomial_rolling_hash(length_data + row_data)
         if computed_hash_val != stored_hash_val:
-            raise TableError("Corrupted file: MergeSort row error")
+            raise TableError("Corrupted file: MergeSort invalid row hash")
 
         row = self.deserialize_row(row_data)
         return row

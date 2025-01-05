@@ -1,5 +1,7 @@
 import random
 
+from utils.string_utils import custom_split
+
 
 class Date:
     def __init__(self, day: int, month: int, year: int):
@@ -8,6 +10,9 @@ class Date:
 
         if not (1 <= day <= self.days_in_month(month, year)):
             raise ValueError(f"Day must be between 1 and {self.days_in_month(month, year)} for month {month}.")
+
+        if not (0 <= year <= 9999):
+            raise ValueError("Year must be between 0 and 9999.")
 
         self.day = day
         self.month = month
@@ -33,7 +38,7 @@ class Date:
         if not cls.is_valid_date_string(date_str):
             raise ValueError("Date must be in the format 'DD.MM.YYYY'")
 
-        parts = date_str.split('.')  # TODO - recreate .split()
+        parts = custom_split(date_str, '.')
 
         day = int(parts[0])
         month = int(parts[1])
@@ -42,7 +47,8 @@ class Date:
 
     @staticmethod
     def is_valid_date_string(date_str):
-        parts = date_str.split('.')
+        parts = custom_split(date_str, '.')
+
         if len(parts) != 3:
             return False
 
@@ -50,8 +56,14 @@ class Date:
             return False
 
         try:
-            for i in range(len(parts)):
-                part = int(parts[i])
+            day = int(parts[0])
+            month = int(parts[1])
+            if month < 1 or month > 12:
+                return False
+
+            year = int(parts[2])
+            if day > Date.days_in_month(month, year):
+                return False
             return True
         except ValueError:
             return False
@@ -61,7 +73,7 @@ class Date:
         year = random.randint(1900, 2100)
         month = random.randint(1, 12)
         day = random.randint(1, Date.days_in_month(month, year))
-        return f"{day:02}.{month:02}.{year}"
+        return Date(day, month, year)
 
     def __repr__(self):
         return f"{self.day:02}.{self.month:02}.{self.year:04}"

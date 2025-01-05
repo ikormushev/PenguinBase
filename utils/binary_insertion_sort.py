@@ -1,16 +1,16 @@
 def binary_insertion_sort(keys: list, order: str = 'ASC') -> list:
     """
-    Perform in-place sorting of a list using Binary Insertion Sort.
+        Perform in-place sorting of a list using Binary Insertion Sort.
 
-    This function sorts the given list by incrementally building a sorted portion
-    and inserting each element at its correct position using Binary Search.
+        This function sorts the given list by incrementally building a sorted portion
+        and inserting each element at its correct position using Binary Search.
 
-    Sorting is stable.
+        Sorting is stable.
 
-    Complexity:
-    - Best Case: O(n log n)
-    - Worst Case: O(n^2)
-    - Space: O(n)
+        Complexity:
+        - Best Case: O(n log n)
+        - Worst Case: O(n^2)
+        - Space: O(n)
     """
     if order not in ('ASC', 'DESC'):
         raise ValueError("Invalid order. Use 'ASC' for ascending or 'DESC' for descending.")
@@ -27,18 +27,18 @@ def binary_insertion_sort(keys: list, order: str = 'ASC') -> list:
 
 def binary_search(keys: list, key_to_insert, low: int, high: int, order: str) -> int:
     """
-    Perform Binary Search to find the position to insert an
-    element in a sorted portion of a list.
+        Perform Binary Search to find the position to insert an
+        element in a sorted portion of a list.
 
-    This function searches for the correct position of `key_to_insert` in the
-    sorted sublist `keys[low:high+1]`.
+        This function searches for the correct position of `key_to_insert` in the
+        sorted sublist `keys[low:high+1]`.
 
-    Complexity:
-    - Time: O(log n)
-    - Space: O(1)
+        Complexity:
+        - Time: O(log n)
+        - Space: O(1)
 
-    Returns:
-    int: The index where `key_to_insert` should be inserted.
+        Returns:
+        int: The index where `key_to_insert` should be inserted.
     """
 
     while low <= high:

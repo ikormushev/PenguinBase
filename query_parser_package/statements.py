@@ -32,6 +32,7 @@ class CreateTableStatement(Statement):
             new_column = column.extract_column()
             columns[new_column.column_name] = new_column
         Table.create_table(self.table_name, columns)
+        return HashTable([("message", f"Successfully created table with name: {self.table_name}")])
 
 
 class DropTableStatement(Statement):
@@ -44,6 +45,7 @@ class DropTableStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.drop_table()
+        return HashTable([("message", f"Successfully dropped table with name: {self.table_name}")])
 
 
 class TableInfoStatement(Statement):
@@ -56,7 +58,8 @@ class TableInfoStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         tableinfo = table.tableinfo()
-        print(tableinfo)
+        return HashTable([("message", f"Successfully retrieved tableinfo of {self.table_name}"),
+                          ("tableinfo", tableinfo), ("table", table)])
 
 
 class InsertValuesStatement(Statement):
@@ -70,6 +73,7 @@ class InsertValuesStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.insert_values(self.rows)
+        return HashTable([("message", f"Successfully inserted values in {self.table_name}"), ("table", table)])
 
 
 class InsertRandomStatement(Statement):
@@ -84,6 +88,7 @@ class InsertRandomStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.insert_random(self.columns_names, self.count)
+        return HashTable([("message", f"Successfully inserted random values in {self.table_name}"), ("table", table)])
 
 
 class GetRowStatement(Statement):
@@ -97,9 +102,8 @@ class GetRowStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
 
-        # TODO - redo the print logic
-        for row in table.get_rows(self.row_numbers):
-            print(row)
+        return HashTable([("message", f"Successfully got rows from {self.table_name}"),
+                          ("rows", table.get_rows(self.row_numbers)), ("columns", table.metadata.columns), ("table", table)])
 
 
 class DeleteRowStatement(Statement):
@@ -113,6 +117,7 @@ class DeleteRowStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.delete_rows(self.row_numbers)
+        return HashTable([("message", f"Successfully deleted rows from {self.table_name}"), ("table", table)])
 
 
 class DeleteWhereStatement(Statement):
@@ -126,6 +131,7 @@ class DeleteWhereStatement(Statement):
     def execute_statement(self):
         table = Table(table_name=self.table_name)
         table.delete_filtered(self.where_expr)
+        return HashTable([("message", f"Successfully deleted rows from {self.table_name}"), ("table", table)])
 
 
 class SelectStatement(Statement):
@@ -167,9 +173,9 @@ class SelectStatement(Statement):
                                                           where_expr=self.where_expr,
                                                           distinct=self.distinct,
                                                           order_by=self.order_by)
-        # TODO - redo the print logic
-        for row in table_selected_rows_generator:
-            print(row)
+
+        return HashTable([("message", f"Successfully selected rows from {self.table_name}"),
+                          ("rows", table_selected_rows_generator), ("columns", columns_to_show), ("table", table)])
 
 
 class CreateIndexStatement(Statement):
@@ -184,6 +190,7 @@ class CreateIndexStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.create_new_index(index_name=self.index_name, column_name=self.column_name)
+        return HashTable([("message", f"Successfully created index {self.index_name} for {self.table_name}"), ("table", table)])
 
 
 class DropIndexStatement(Statement):
@@ -197,6 +204,7 @@ class DropIndexStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.drop_index(self.index_name)
+        return HashTable([("message", f"Successfully dropped index {self.index_name} for {self.table_name}"), ("table", table)])
 
 
 class DefragmentTableStatement(Statement):
@@ -209,3 +217,4 @@ class DefragmentTableStatement(Statement):
     def execute_statement(self):
         table = Table(self.table_name)
         table.defragment()
+        return HashTable([("message", f"Successfully defragmented {self.table_name}"), ("table", table)])

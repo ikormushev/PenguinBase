@@ -9,13 +9,10 @@ class ExpressionNode(ABC):
 
     @abstractmethod
     def evaluate_expression(self, row):
-        ...
+        pass
 
 
 class BinaryOpNode(ExpressionNode):
-    """
-        A node for binary operations.
-    """
     def __init__(self, left: ExpressionNode, operator: str, right: ExpressionNode):
         self.left = left
         self.operator = operator
@@ -47,13 +44,10 @@ class BinaryOpNode(ExpressionNode):
             elif self.operator == "OR":
                 return left or right
         except TypeError:
-            raise ParseError("Comparsion not valid!")
+            raise ParseError(f"Comparsion of {left} and {right} not valid!")
 
 
 class NotNode(ExpressionNode):
-    """
-        A node that represents 'NOT <expr>'.
-    """
     def __init__(self, expr: ExpressionNode):
         self.expr = expr
 

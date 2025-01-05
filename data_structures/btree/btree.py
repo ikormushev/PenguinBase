@@ -1,5 +1,5 @@
 import struct
-from typing import List
+from typing import List, Generator
 
 from data_structures.btree.btree_node_manager import BTreeNodeManager
 from data_structures.btree.pointer_list_manager import PointerListManager
@@ -7,6 +7,7 @@ from data_structures.hash_table import HashTable
 from utils.binary_insertion_sort import binary_insertion_sort
 from utils.date import Date
 from utils.errors import ParseError, TableError
+from utils.string_utils import custom_strip
 
 
 class BTreeNodeKey:
@@ -17,8 +18,6 @@ class BTreeNodeKey:
 
     @property
     def _key_type(self):
-        k_type = None
-
         if isinstance(self.key, int):
             k_type = "I"
         elif isinstance(self.key, float):
@@ -27,6 +26,8 @@ class BTreeNodeKey:
             k_type = "D"
         elif isinstance(self.key, str):
             k_type = "S"
+        else:
+            raise ValueError(f"Unsupported key type: {type(self.key)}")
 
         return k_type
 
@@ -37,7 +38,7 @@ class BTreeNodeKey:
 
         k_size = 1
         if key_type == "N" or key_type == "I" or key_type == "F":
-            k_size += 8
+            k_size += 8  # TODO - Later can be changed for different numbers
         elif key_type == "D":
             k_size += struct.calcsize("10s")
         elif key_type == "S":
@@ -85,6 +86,7 @@ class BTreeNodeKey:
         offset += 1
         key_max_size = None
 
+        # TODO - try, except for ValueErrors?
         if key_type == b"I":
             key = int(struct.unpack("q", key_data[offset:offset + 8])[0])
             offset += 8
@@ -103,7 +105,7 @@ class BTreeNodeKey:
             value_bytes = key_data[offset:offset + length]
             offset += length
 
-            key = value_bytes.decode().strip("\x00")  # TODO - recreate .strip()
+            key = custom_strip(value_bytes.decode(), "\x00")
         else:
             raise TableError("Unsupported key type")
 
@@ -143,8 +145,8 @@ class BTreeNode:
     def __init__(self, t: int, offset: int | None = None, is_leaf: bool = True, keys=None, children=None):
         """
         Args:
-            offset (int | None): Where the node is located in a file.
-            is_leaf (bool): Whether this node is a leaf node - the bottom-most node of the B-tree.
+            offset - where the node is located in a file.
+            is_leaf - whether this node is a leaf node - the bottom-most node of the BTree.
         """
         self.t = t
         self.offset = offset
@@ -155,24 +157,21 @@ class BTreeNode:
     @property
     def max_keys(self):
         """
-        In a B-tree, the maximum number of keys a node can have is ((2 * t) - 1).
+            In a BTree, the maximum number of keys a node can have is ((2 * t) - 1).
         """
         return 2 * self.t - 1
 
     @property
     def max_children(self):
         """
-        In a B-tree, the maximum number of children per node ca be (2 * t).
+            In a BTree, the maximum number of children per node ca be (2 * t).
         """
         return 2 * self.t
 
     def sort_node_keys(self):
         """
-        Sort the keys in the current B-tree node.
-
-        B-tree requires the nodes to be sorted in ascending order.
-        Here, sorting is performed by Binary Insertion Sort
-        because the number of keys in a node is typically small.
+            Sort the keys in the current BTree node because
+            the BTree requires the nodes to be sorted in ascending order.
         """
         self.keys = binary_insertion_sort(self.keys)
 
@@ -208,6 +207,7 @@ class BTreeNode:
         node_data = metadata + keys_data + children_data
         node_size = len(node_data)
         header = struct.pack("i", node_size)
+
         return header + node_data
 
     @staticmethod
@@ -240,11 +240,7 @@ class BTreeNode:
                 children.append(child_off)
             offset += 8
 
-        return BTreeNode(is_leaf=is_leaf,
-                         keys=keys,
-                         children=children,
-                         t=t,
-                         offset=node_offset)
+        return BTreeNode(is_leaf=is_leaf, keys=keys, children=children, t=t, offset=node_offset)
 
     def __repr__(self):
         return f"Offset: {self.offset} | Keys: {self.keys} | Children: {self.children}"
@@ -252,15 +248,13 @@ class BTreeNode:
 
 class BTree:
     """
-    The B-tree is a self-balancing search tree that maintains sorted data.
-
-    Attributes:
-        t (int): The minimum degree of the B-tree.
+    Key points about the BTree:
+        - t (int) - the minimum degree of the BTree
             Determines the maximum number of children and keys in a node:
-            - Maximum keys per node: 2 * t - 1
-            - Minimum keys per node (except root): t - 1
-            - Maximum children per node: 2 * t
-        root (BTreeNode): The root node of the B-tree.
+            - max keys per node: 2 * t - 1
+            - min keys per node (except root): t - 1
+            - max children per node: 2 * t
+        - root (BTreeNode) - the root node of the BTree
     """
 
     def __init__(self, node_file_path, pointer_file_path):
@@ -300,7 +294,7 @@ class BTree:
     def root(self) -> BTreeNode:
         return self._load_node(self.manager.root_offset)
 
-    def search(self, key) -> HashTable | None:
+    def search(self, key) -> Generator | None:
         node_info = self._search(self.manager.root_offset, key)
         if node_info:
             return self.find_key_pointers(node_info)
@@ -310,13 +304,12 @@ class BTree:
         i = 0
         node = self._load_node(node_offset)
 
-        # Find the first key greater than or equal to k
         while i < len(node.keys) and key > node.keys[i].key:
             i += 1
+
         if i < len(node.keys) and node.keys[i].key == key:
             return HashTable([("node", node), ("key_index", i)])
 
-        # If this is a leaf node, then the key is not present
         if node.is_leaf:
             return None
 
@@ -328,11 +321,11 @@ class BTree:
 
         existing_key_info = self._search(self.manager.root_offset, key)
 
-        # If key already exists, we just add the new pointer
         if existing_key_info:
             existing_key_node = existing_key_info["node"]
             existing_key_index = existing_key_info["key_index"]
             existing_key = existing_key_node.keys[existing_key_index]
+
             if existing_key.pointers[1] == -1:
                 pointer_pos = self.pointer_manager.create_pointer_list(pointer)
                 existing_key.pointers[1] = pointer_pos
@@ -364,7 +357,7 @@ class BTree:
         if node.is_leaf:
             new_key = BTreeNodeKey(key, [pointer, -1], self.manager.key_max_size)
             node.keys.append(new_key)
-            node.sort_node_keys()  # TODO - not needed to use the built-in .sort() + is it even allowed?
+            node.sort_node_keys()
         else:
             while i >= 0 and key < node.keys[i].key:
                 i -= 1
@@ -386,7 +379,7 @@ class BTree:
 
     def _split_child(self, parent: BTreeNode, i: int):
         """
-        Split a full child node into two nodes.
+            Split a full child node into two nodes.
         """
         child_offset = parent.children[i]
         child = self._load_node(child_offset)
@@ -425,26 +418,28 @@ class BTree:
     def find_key_pointers(self, key_info: HashTable):
         key_node = key_info["node"]
         key_index = key_info["key_index"]
+
         actual_key = key_node.keys[key_index]
+        main_pointer = actual_key.pointers[0]
+        yield main_pointer
+
         other_pointers_pointer = actual_key.pointers[1]
-        pointers = [actual_key.pointers[0]] + self.pointer_manager.traverse_pointer_list(other_pointers_pointer)
-        return pointers
+        yield from self.pointer_manager.traverse_pointer_list(other_pointers_pointer)
 
     def _delete_from_node(self, node: BTreeNode, key):
         """
-        Main points when a node is deleted:
-        - a node can have max t children
-        - a node should have min (t // 2) children
-        - a node can contaion max (t - 1) keys
-            - only a leaf node can have max t keys
-        - a node (except root) should contain min ((t/2) - 1) keys
+            Main points when a node is deleted:
+            - a node can have max t children
+            - a node should have min (t // 2) children
+            - a node can contaion max (t - 1) keys
+                - only a leaf node can have max t keys
+            - a node (except root) should contain min ((t/2) - 1) keys
         """
         idx = node.find_key_index(key)
-
         if idx < len(node.keys) and node.keys[idx].key == key:
             if node.is_leaf:
                 # Case 1: Key is in the leaf node
-                node.keys.pop(idx)  # TODO - .pop() allowed?
+                node.keys.pop(idx)
             else:
                 # Case 2: Key is in an internal node - any node that is not a leaf
                 self._delete_internal_node(node, idx)
@@ -459,16 +454,18 @@ class BTree:
 
             if len(child_node.keys) < self.t:
                 self._fix_child(node, idx)
-                # self._save_node(node)  # TODO - probably not needed
+
+                self._save_node(node)  # TODO - just in case
+                if idx >= len(node.children):
+                    idx -= 1  # TODO - fixes a bug where multiple deletes mess up the BTree
                 child_node = self._load_node(node.children[idx])
 
-            # Recursively delete from the appropriate child
             self._delete_from_node(child_node, key)
             self._save_node(child_node)
 
     def _delete_internal_node(self, node: BTreeNode, index: int):
         """
-        Handle deletion when the key is in an internal node - any node that is not a leaf.
+            Handle deletion when the key is in an internal node - any node that is not a leaf.
         """
         key = node.keys[index]
         left_child_offset = node.children[index]
@@ -484,7 +481,7 @@ class BTree:
             self._save_node(node)
 
             self._delete_from_node(left_child, pred.key)
-            # self._save_node(left_child) # TODO - probably not needed
+            self._save_node(left_child) # TODO - probably not needed
         elif len(right_child.keys) >= self.t:
             # Case 2.2: Use the successor - the smallest key on the right child
             succ = self._get_successor(node, index)
@@ -492,7 +489,7 @@ class BTree:
             self._save_node(node)
 
             self._delete_from_node(right_child, succ.key)
-            # self._save_node(right_child) # TODO - probably not needed
+            self._save_node(right_child) # TODO - probably not needed
         else:
             # Case 2.3: Merge the two children and delete
             self._merge(node, index)
@@ -500,21 +497,20 @@ class BTree:
 
             merged_child_offset = node.children[index]
             merged_child = self._load_node(merged_child_offset)
-            self._delete_from_node(merged_child, key.key)
             self._save_node(merged_child)
+            self._delete_from_node(merged_child, key.key)
+            # self._save_node(merged_child)
 
     def _fix_child(self, parent_node: BTreeNode, idx: int):
         """
-        Ensure the child node has at least t keys by borrowing or merging.
-        Args:
-            node - the parent node
-            idx - the index of the child node
+            Ensure the child node has at least t keys by borrowing or merging.
         """
         left_sibling_offset = None
         right_sibling_offset = None
 
         if idx > 0:
             left_sibling_offset = parent_node.children[idx - 1]
+
         if idx < len(parent_node.children) - 1:
             right_sibling_offset = parent_node.children[idx + 1]
 
@@ -522,7 +518,6 @@ class BTree:
             left_sibling = self._load_node(left_sibling_offset)
 
             if len(left_sibling.keys) >= self.t:
-                # Borrow from the left sibling
                 self._borrow_from_left_sibling(parent_node, idx)
                 return
 
@@ -530,7 +525,6 @@ class BTree:
             right_sibling = self._load_node(right_sibling_offset)
 
             if len(right_sibling.keys) >= self.t:
-                # Borrow from the right sibling
                 self._borrow_from_right_sibling(parent_node, idx)
                 return
 
@@ -542,7 +536,7 @@ class BTree:
 
     def _merge(self, parent_node: BTreeNode, idx: int):
         """
-        Merge two children of a node at the given index.
+            Merge two children of a node at the given index.
         """
         left_child_offset = parent_node.children[idx]
         left_child = self._load_node(left_child_offset)
@@ -563,15 +557,9 @@ class BTree:
 
         self._save_node(parent_node)
         self._save_node(left_child)
-        self._save_node(right_child)
+        # self._save_node(right_child)
 
     def _borrow_from_left_sibling(self, parent_node: BTreeNode, idx: int):
-        """
-        Borrow a key from the left sibling.
-        Args:
-            node - the parent node
-            idx - the index of the child node
-        """
         child_offset = parent_node.children[idx]
         child = self._load_node(child_offset)
 
@@ -590,12 +578,6 @@ class BTree:
         self._save_node(left_sibling)
 
     def _borrow_from_right_sibling(self, parent_node: BTreeNode, idx: int):
-        """
-        Borrow a key from the right sibling.
-        Args:
-            node - the parent node
-            idx - the index of the child node
-        """
         child_offset = parent_node.children[idx]
         child = self._load_node(child_offset)
 
@@ -615,7 +597,7 @@ class BTree:
 
     def _get_predecessor(self, node: BTreeNode, index: int) -> BTreeNodeKey:
         """
-        Get the predecessor - the largest key on the left child.
+            The predecessor is the largest key on the left child.
         """
         current = self._load_node(node.children[index])
         while not current.is_leaf:
@@ -625,7 +607,7 @@ class BTree:
 
     def _get_successor(self, node: BTreeNode, index: int) -> BTreeNodeKey:
         """
-        Get the successor - the smallest key on the right child.
+            The successor is the smallest key on the right child.
         """
         current = self._load_node(node.children[index + 1])
         while not current.is_leaf:
@@ -650,6 +632,7 @@ class BTree:
 
     def delete_pointer(self, key, pointer: int):
         searched_node_info = self._search(self.manager.root_offset, key)
+
         if searched_node_info is None:
             return
 
@@ -659,7 +642,6 @@ class BTree:
         searched_key = searched_node.keys[searched_key_index]
         main_pointer = searched_key.pointers[0]
         secondary_pointer_to_file = searched_key.pointers[1]
-
         if main_pointer == pointer:
             if secondary_pointer_to_file == -1:
                 self.delete(key)
@@ -693,43 +675,35 @@ class BTree:
             if not node.is_leaf:
                 yield from self._range_search_node(node.children[i], lower, upper)
 
-            yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+            yield from self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
             i += 1
 
-        if not node.is_leaf:
+        if not node.is_leaf and i < len(node.children):
             yield from self._range_search_node(node.children[i], lower, upper)
 
     def range_search(self, lower, upper):
         yield from self._range_search_node(self.manager.root_offset, lower, upper)
 
     def _in_order_traversal(self, offset: int):
-        """
-            Perform in-order traversal of the B-Tree.
-            Yields (key, row) pairs in ascending order.
-        """
         node = self._load_node(offset)
         if node.is_leaf:
             for i in range(len(node.keys)):
-                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+                yield from self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
         else:
             for i in range(len(node.keys)):
                 yield from self._in_order_traversal(node.children[i])
-                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+                yield from self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
             yield from self._in_order_traversal(node.children[-1])
 
     def _reverse_in_order_traversal(self, offset: int):
-        """
-            Perform reverse in-order traversal of the B-Tree.
-            Yields (key, row) pairs in descending order.
-        """
         node = self._load_node(offset)
         if node.is_leaf:
             for i in range(len(node.keys) - 1, -1, -1):
-                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+                yield from self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
         else:
             for i in range(len(node.keys) - 1, -1, -1):
                 yield from self._reverse_in_order_traversal(node.children[i + 1])
-                yield self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
+                yield from self.find_key_pointers(HashTable([("node", node), ("key_index", i)]))
             yield from self._reverse_in_order_traversal(node.children[0])
 
     def order_btree(self, order='ASC'):
@@ -740,4 +714,4 @@ class BTree:
         elif order == 'DESC':
             yield from self._reverse_in_order_traversal(root_offset)
         else:
-            raise ParseError(f"Order '{order}' is not supported.'")
+            raise ParseError(f"Order '{order}' is not supported")
